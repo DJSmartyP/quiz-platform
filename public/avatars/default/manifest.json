@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "default",
+  "name": "Standard",
+  "alwaysEnabled": true,
+  "avatars": [
+    { "id": "default-red", "name": "Red", "src": "avatars/default/red.png" },
+    { "id": "default-black", "name": "Black", "src": "avatars/default/black.png" },
+    { "id": "default-silver", "name": "Silver", "src": "avatars/default/silver.png" },
+    { "id": "default-green", "name": "Green", "src": "avatars/default/green.png" },
+    { "id": "default-pink", "name": "Pink", "src": "avatars/default/pink.png" },
+    { "id": "default-cyan", "name": "Cyan", "src": "avatars/default/cyan.png" },
+    { "id": "default-purple", "name": "Purple", "src": "avatars/default/purple.png" },
+    { "id": "default-orange", "name": "Orange", "src": "avatars/default/orange.png" },
+    { "id": "default-yellow", "name": "Yellow", "src": "avatars/default/yellow.png" },
+    { "id": "default-blue", "name": "Blue", "src": "avatars/default/blue.png" }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "sci-fi",
+  "name": "Sci-Fi",
+  "alwaysEnabled": false,
+  "avatars": [
+    { "id": "sci-fi-neon-alien", "name": "Neon Alien", "src": "avatars/sci-fi/neon-alien.png" },
+    { "id": "sci-fi-cosmic-mystic", "name": "Cosmic Mystic", "src": "avatars/sci-fi/cosmic-mystic.png" },
+    { "id": "sci-fi-space-mechanic", "name": "Space Mechanic", "src": "avatars/sci-fi/space-mechanic.png" },
+    { "id": "sci-fi-space-scientist", "name": "Space Scientist", "src": "avatars/sci-fi/space-scientist.png" },
+    { "id": "sci-fi-star-pilot", "name": "Star Pilot", "src": "avatars/sci-fi/star-pilot.png" },
+    { "id": "sci-fi-star-pilot-2", "name": "Star Pilot 2", "src": "avatars/sci-fi/star-pilot-2.png" },
+    { "id": "sci-fi-robot-engineer", "name": "Robot Engineer", "src": "avatars/sci-fi/robot-engineer.png" },
+    { "id": "sci-fi-cyborg", "name": "Cyborg", "src": "avatars/sci-fi/cyborg.png" },
+    { "id": "sci-fi-friendly-robot", "name": "Friendly Robot", "src": "avatars/sci-fi/friendly-robot.png" },
+    { "id": "sci-fi-alien-scout", "name": "Alien Scout", "src": "avatars/sci-fi/alien-scout.png" },
+    { "id": "sci-fi-astronaut", "name": "Astronaut", "src": "avatars/sci-fi/astronaut.png" },
+    { "id": "sci-fi-star-captain", "name": "Star Captain", "src": "avatars/sci-fi/star-captain.png" },
+    { "id": "sci-fi-hologram", "name": "Hologram", "src": "avatars/sci-fi/hologram.png" }
+  ]
+}

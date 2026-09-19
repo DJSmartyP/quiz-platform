@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "platypus",
+  "name": "Platypus",
+  "alwaysEnabled": false,
+  "avatars": [
+    { "id": "platypus-classic", "name": "Classic Platypus", "src": "avatars/platypus/classic.png" },
+    { "id": "platypus-winter-explorer", "name": "Winter Explorer", "src": "avatars/platypus/winter-explorer.png" },
+    { "id": "platypus-wizard", "name": "Wizard", "src": "avatars/platypus/wizard.png" },
+    { "id": "platypus-stationmaster", "name": "Stationmaster", "src": "avatars/platypus/stationmaster.png" },
+    { "id": "platypus-cartographer", "name": "Cartographer", "src": "avatars/platypus/cartographer.png" },
+    { "id": "platypus-engineer", "name": "Engineer", "src": "avatars/platypus/engineer.png" },
+    { "id": "platypus-punk", "name": "Punk", "src": "avatars/platypus/punk.png" },
+    { "id": "platypus-ringmaster", "name": "Ringmaster", "src": "avatars/platypus/ringmaster.png" },
+    { "id": "platypus-miner", "name": "Miner", "src": "avatars/platypus/miner.png" },
+    { "id": "platypus-cowboy", "name": "Cowboy", "src": "avatars/platypus/cowboy.png" },
+    { "id": "platypus-cyber-explorer", "name": "Cyber Explorer", "src": "avatars/platypus/cyber-explorer.png" },
+    { "id": "platypus-astronaut", "name": "Astronaut", "src": "avatars/platypus/astronaut.png" }
+  ]
+}
