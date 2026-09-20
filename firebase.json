@@ -4,7 +4,11 @@
   },
   "auth": {
     "providers": {
-      "anonymous": true
+      "anonymous": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "QuizForge",
+        "supportEmail": "nickpatel.trainer@gmail.com"
+      }
     }
   }
 }

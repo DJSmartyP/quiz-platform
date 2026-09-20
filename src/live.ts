@@ -37,7 +37,12 @@ function newGameCode() {
 async function hostUid() {
   await setPersistence(hostAuth, browserLocalPersistence)
   await hostAuth.authStateReady()
-  return (hostAuth.currentUser || (await signInWithPopup(hostAuth, new GoogleAuthProvider())).user).uid
+  const user = hostAuth.currentUser || (await signInWithPopup(hostAuth, new GoogleAuthProvider())).user
+  if (user.email?.toLowerCase() !== 'nickpatel.trainer@gmail.com' || !user.emailVerified ||
+      !user.providerData.some(provider => provider.providerId === 'google.com')) {
+    throw new Error('Only nickpatel.trainer@gmail.com can control QuizForge live games.')
+  }
+  return user.uid
 }
 
 async function playerUid() {
@@ -63,10 +68,6 @@ function timedGame(data: PublicDocument | PrivateDocument): Game {
 export async function startLiveHost(onStatus: (message: string, canControl: boolean) => void) {
   if (!getGame().questions.length) throw new Error('Add at least one question before starting a live game.')
   const uid = await hostUid()
-  const approval = await getDoc(doc(hostDb, 'organisers', uid))
-  if (!approval.exists() || approval.data().approved !== true) {
-    throw new Error(`This Host account needs approval. Firebase UID: ${uid}`)
-  }
   const code = localStorage.getItem('quiz-live-host-code') || newGameCode()
   const publicRef = doc(hostDb, 'liveGames', code)
   const privateRef = doc(hostDb, 'liveGames', code, 'private', 'engine')

@@ -4,19 +4,15 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function approvedHost() {
       return signedIn() &&
-        exists(/databases/$(database)/documents/organisers/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/organisers/$(request.auth.uid)).data.approved == true;
+        request.auth.token.email == 'nickpatel.trainer@gmail.com' &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.firebase.sign_in_provider == 'google.com';
     }
     function session(code) {
       return get(/databases/$(database)/documents/liveGames/$(code));
     }
     function isHost(code) {
       return approvedHost() && session(code).data.hostUid == request.auth.uid;
-    }
-
-    match /organisers/{uid} {
-      allow get: if signedIn() && request.auth.uid == uid;
-      allow list, create, update, delete: if false; // Bootstrapped outside the public client.
     }
 
     match /liveGames/{code} {
