@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { browserLocalPersistence, getAuth, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup } from 'firebase/auth'
+import { browserLocalPersistence, getAuth, getRedirectResult, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup, signInWithRedirect } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, getFirestore, onSnapshot, query, runTransaction, serverTimestamp, where, type Unsubscribe } from 'firebase/firestore'
 import { advanceGame, breakGame, resumeGame } from './gameEngine'
 import { currentQuestion, isLastQuestionInRound, type Game, type Player, type Response } from './model'
@@ -21,7 +21,10 @@ const playerDb = getFirestore(playerApp)
 const screenDb = getFirestore(screenApp)
 const hostAuth = getAuth(hostApp)
 const playerAuth = getAuth(playerApp)
-const controllerId = crypto.randomUUID() // one controller per browser tab
+const priorControllerId = sessionStorage.getItem('quiz-host-controller-id')
+const isReload = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload'
+const controllerId = isReload && priorControllerId ? priorControllerId : crypto.randomUUID()
+sessionStorage.setItem('quiz-host-controller-id', controllerId)
 
 type PublicDocument = { hostUid: string; controllerId: string; memberUids: string[]; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
 type PrivateDocument = { hostUid: string; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
@@ -34,10 +37,36 @@ function newGameCode() {
   return [...values].map(value => codeAlphabet[value % codeAlphabet.length]).join('')
 }
 
-async function hostUid() {
+export const hostRedirectKey = 'quiz-host-redirect-pending'
+let redirectFinishPromise: Promise<void> | null = null
+
+export async function hasHostSession() {
   await setPersistence(hostAuth, browserLocalPersistence)
   await hostAuth.authStateReady()
-  const user = hostAuth.currentUser || (await signInWithPopup(hostAuth, new GoogleAuthProvider())).user
+  return Boolean(hostAuth.currentUser && localStorage.getItem('quiz-live-host-code'))
+}
+
+export async function beginHostRedirect() {
+  await setPersistence(hostAuth, browserLocalPersistence)
+  sessionStorage.setItem(hostRedirectKey, '1')
+  try { await signInWithRedirect(hostAuth, new GoogleAuthProvider()) }
+  catch (error) { sessionStorage.removeItem(hostRedirectKey); throw error }
+}
+
+export function finishHostRedirect() {
+  redirectFinishPromise ||= (async () => {
+    await getRedirectResult(hostAuth)
+    await hostAuth.authStateReady()
+    if (!hostAuth.currentUser) throw new Error('Google sign-in did not complete. Try opening QuizForge in Chrome or Edge.')
+  })()
+  return redirectFinishPromise
+}
+
+async function hostUid(allowPopup = true) {
+  await setPersistence(hostAuth, browserLocalPersistence)
+  await hostAuth.authStateReady()
+  const user = hostAuth.currentUser || (allowPopup ? (await signInWithPopup(hostAuth, new GoogleAuthProvider())).user : null)
+  if (!user) throw new Error('Google sign-in did not complete. Try opening QuizForge in Chrome or Edge.')
   if (user.email?.toLowerCase() !== 'nickpatel.trainer@gmail.com' || !user.emailVerified ||
       !user.providerData.some(provider => provider.providerId === 'google.com')) {
     throw new Error('Only nickpatel.trainer@gmail.com can control QuizForge live games.')
@@ -65,9 +94,9 @@ function timedGame(data: PublicDocument | PrivateDocument): Game {
   return { ...data.game, openedAt, closesAt: openedAt + duration * 1000 }
 }
 
-export async function startLiveHost(onStatus: (message: string, canControl: boolean) => void) {
+export async function startLiveHost(onStatus: (message: string, canControl: boolean) => void, allowPopup = true) {
   if (!getGame().questions.length) throw new Error('Add at least one question before starting a live game.')
-  const uid = await hostUid()
+  const uid = await hostUid(allowPopup)
   const code = localStorage.getItem('quiz-live-host-code') || newGameCode()
   const publicRef = doc(hostDb, 'liveGames', code)
   const privateRef = doc(hostDb, 'liveGames', code, 'private', 'engine')
