@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "food-objects",
+  "name": "Food & Objects",
+  "alwaysEnabled": false,
+  "avatars": [
+    {
+      "id": "food-objects-sentient-pizza",
+      "name": "Sentient Pizza",
+      "src": "avatars/food-objects/sentient-pizza.png"
+    },
+    {
+      "id": "food-objects-coffee-cup",
+      "name": "Coffee Cup",
+      "src": "avatars/food-objects/coffee-cup.png"
+    },
+    {
+      "id": "food-objects-doughnut",
+      "name": "Doughnut",
+      "src": "avatars/food-objects/doughnut.png"
+    },
+    {
+      "id": "food-objects-toaster",
+      "name": "Toaster",
+      "src": "avatars/food-objects/toaster.png"
+    },
+    {
+      "id": "food-objects-traffic-cone",
+      "name": "Traffic Cone",
+      "src": "avatars/food-objects/traffic-cone.png"
+    },
+    {
+      "id": "food-objects-rubber-duck",
+      "name": "Rubber Duck",
+      "src": "avatars/food-objects/rubber-duck.png"
+    },
+    {
+      "id": "food-objects-banana",
+      "name": "Banana",
+      "src": "avatars/food-objects/banana.png"
+    },
+    {
+      "id": "food-objects-cactus",
+      "name": "Cactus",
+      "src": "avatars/food-objects/cactus.png"
+    },
+    {
+      "id": "food-objects-dice",
+      "name": "Dice",
+      "src": "avatars/food-objects/dice.png"
+    },
+    {
+      "id": "food-objects-vhs-tape",
+      "name": "VHS Tape",
+      "src": "avatars/food-objects/vhs-tape.png"
+    },
+    {
+      "id": "food-objects-popcorn-box",
+      "name": "Popcorn Box",
+      "src": "avatars/food-objects/popcorn-box.png"
+    },
+    {
+      "id": "food-objects-teapot",
+      "name": "Teapot",
+      "src": "avatars/food-objects/teapot.png"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "animals",
+  "name": "Animals",
+  "alwaysEnabled": false,
+  "avatars": [
+    {
+      "id": "animals-fox",
+      "name": "Fox",
+      "src": "avatars/animals/fox.png"
+    },
+    {
+      "id": "animals-cat",
+      "name": "Cat",
+      "src": "avatars/animals/cat.png"
+    },
+    {
+      "id": "animals-dog",
+      "name": "Dog",
+      "src": "avatars/animals/dog.png"
+    },
+    {
+      "id": "animals-raccoon",
+      "name": "Raccoon",
+      "src": "avatars/animals/raccoon.png"
+    },
+    {
+      "id": "animals-bear",
+      "name": "Bear",
+      "src": "avatars/animals/bear.png"
+    },
+    {
+      "id": "animals-frog",
+      "name": "Frog",
+      "src": "avatars/animals/frog.png"
+    },
+    {
+      "id": "animals-owl",
+      "name": "Owl",
+      "src": "avatars/animals/owl.png"
+    },
+    {
+      "id": "animals-shark",
+      "name": "Shark",
+      "src": "avatars/animals/shark.png"
+    },
+    {
+      "id": "animals-dinosaur",
+      "name": "Dinosaur",
+      "src": "avatars/animals/dinosaur.png"
+    },
+    {
+      "id": "animals-penguin",
+      "name": "Penguin",
+      "src": "avatars/animals/penguin.png"
+    },
+    {
+      "id": "animals-axolotl",
+      "name": "Axolotl",
+      "src": "avatars/animals/axolotl.png"
+    },
+    {
+      "id": "animals-capybara",
+      "name": "Capybara",
+      "src": "avatars/animals/capybara.png"
+    }
+  ]
+}

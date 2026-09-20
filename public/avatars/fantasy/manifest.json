@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "fantasy",
+  "name": "Fantasy",
+  "alwaysEnabled": false,
+  "avatars": [
+    {
+      "id": "fantasy-wizard",
+      "name": "Wizard",
+      "src": "avatars/fantasy/wizard.png"
+    },
+    {
+      "id": "fantasy-witch",
+      "name": "Witch",
+      "src": "avatars/fantasy/witch.png"
+    },
+    {
+      "id": "fantasy-knight",
+      "name": "Knight",
+      "src": "avatars/fantasy/knight.png"
+    },
+    {
+      "id": "fantasy-rogue",
+      "name": "Rogue",
+      "src": "avatars/fantasy/rogue.png"
+    },
+    {
+      "id": "fantasy-elf-ranger",
+      "name": "Elf Ranger",
+      "src": "avatars/fantasy/elf-ranger.png"
+    },
+    {
+      "id": "fantasy-goblin",
+      "name": "Goblin",
+      "src": "avatars/fantasy/goblin.png"
+    },
+    {
+      "id": "fantasy-dwarf",
+      "name": "Dwarf",
+      "src": "avatars/fantasy/dwarf.png"
+    },
+    {
+      "id": "fantasy-bard",
+      "name": "Bard",
+      "src": "avatars/fantasy/bard.png"
+    },
+    {
+      "id": "fantasy-battle-mage",
+      "name": "Battle Mage",
+      "src": "avatars/fantasy/battle-mage.png"
+    },
+    {
+      "id": "fantasy-dragon-person",
+      "name": "Dragon Person",
+      "src": "avatars/fantasy/dragon-person.png"
+    },
+    {
+      "id": "fantasy-enchanted-armour",
+      "name": "Enchanted Armour",
+      "src": "avatars/fantasy/enchanted-armour.png"
+    },
+    {
+      "id": "fantasy-forest-sprite",
+      "name": "Forest Sprite",
+      "src": "avatars/fantasy/forest-sprite.png"
+    }
+  ]
+}

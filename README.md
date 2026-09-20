@@ -17,7 +17,7 @@ The organiser workspace, quiz editor, host console, main screen, and player view
 
 - Twelve sample question formats, host progression, answer submission, visible countdowns, score calculation, round-only scores, cumulative leaderboard, and a small prompt editor.
 - Anagrams have an editable answer, a saved jumble, and letters that progressively lock into place while the timer runs.
-- All 35 supplied avatars: 10 Standard, 12 Platypus, 13 Sci-Fi. The Sci-Fi pack includes Hologram.
+- All 143 supplied avatars across 12 packs, including the 13 transparent Sci-Fi cutouts. The original Standard and Platypus images are preserved.
 - The live game in this review build is browser-local. A join link works as a navigation preview but different devices do not yet share a game.
 - Authentication, persistent quizzes, Firestore multiplayer, security rules, media, PDF export, and the operational admin dashboard are defined in the build specification and are not implemented in this preview.
 

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "monsters-spooks",
+  "name": "Monsters & Spooks",
+  "alwaysEnabled": false,
+  "avatars": [
+    {
+      "id": "monsters-spooks-ghost",
+      "name": "Ghost",
+      "src": "avatars/monsters-spooks/ghost.png"
+    },
+    {
+      "id": "monsters-spooks-goth-ghost",
+      "name": "Goth Ghost",
+      "src": "avatars/monsters-spooks/goth-ghost.png"
+    },
+    {
+      "id": "monsters-spooks-vampire",
+      "name": "Vampire",
+      "src": "avatars/monsters-spooks/vampire.png"
+    },
+    {
+      "id": "monsters-spooks-zombie",
+      "name": "Zombie",
+      "src": "avatars/monsters-spooks/zombie.png"
+    },
+    {
+      "id": "monsters-spooks-mummy",
+      "name": "Mummy",
+      "src": "avatars/monsters-spooks/mummy.png"
+    },
+    {
+      "id": "monsters-spooks-werewolf",
+      "name": "Werewolf",
+      "src": "avatars/monsters-spooks/werewolf.png"
+    },
+    {
+      "id": "monsters-spooks-skeleton",
+      "name": "Skeleton",
+      "src": "avatars/monsters-spooks/skeleton.png"
+    },
+    {
+      "id": "monsters-spooks-swamp-creature",
+      "name": "Swamp Creature",
+      "src": "avatars/monsters-spooks/swamp-creature.png"
+    },
+    {
+      "id": "monsters-spooks-demon",
+      "name": "Demon",
+      "src": "avatars/monsters-spooks/demon.png"
+    },
+    {
+      "id": "monsters-spooks-spooky-doll",
+      "name": "Spooky Doll",
+      "src": "avatars/monsters-spooks/spooky-doll.png"
+    },
+    {
+      "id": "monsters-spooks-friendly-monster",
+      "name": "Friendly Monster",
+      "src": "avatars/monsters-spooks/friendly-monster.png"
+    },
+    {
+      "id": "monsters-spooks-party-monster",
+      "name": "Party Monster",
+      "src": "avatars/monsters-spooks/party-monster.png"
+    }
+  ]
+}

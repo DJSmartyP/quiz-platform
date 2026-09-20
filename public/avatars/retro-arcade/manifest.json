@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "retro-arcade",
+  "name": "Retro & Arcade",
+  "alwaysEnabled": false,
+  "avatars": [
+    {
+      "id": "retro-arcade-pixel-hero",
+      "name": "Pixel Hero",
+      "src": "avatars/retro-arcade/pixel-hero.png"
+    },
+    {
+      "id": "retro-arcade-arcade-robot",
+      "name": "Arcade Robot",
+      "src": "avatars/retro-arcade/arcade-robot.png"
+    },
+    {
+      "id": "retro-arcade-neon-racer",
+      "name": "Neon Racer",
+      "src": "avatars/retro-arcade/neon-racer.png"
+    },
+    {
+      "id": "retro-arcade-cassette-head",
+      "name": "Cassette Head",
+      "src": "avatars/retro-arcade/cassette-head.png"
+    },
+    {
+      "id": "retro-arcade-disco-star",
+      "name": "Disco Star",
+      "src": "avatars/retro-arcade/disco-star.png"
+    },
+    {
+      "id": "retro-arcade-80s-rocker",
+      "name": "80s Rocker",
+      "src": "avatars/retro-arcade/80s-rocker.png"
+    },
+    {
+      "id": "retro-arcade-game-show-host",
+      "name": "Game Show Host",
+      "src": "avatars/retro-arcade/game-show-host.png"
+    },
+    {
+      "id": "retro-arcade-retro-gamer",
+      "name": "Retro Gamer",
+      "src": "avatars/retro-arcade/retro-gamer.png"
+    },
+    {
+      "id": "retro-arcade-synthwave-skater",
+      "name": "Synthwave Skater",
+      "src": "avatars/retro-arcade/synthwave-skater.png"
+    },
+    {
+      "id": "retro-arcade-joystick-kid",
+      "name": "Joystick Kid",
+      "src": "avatars/retro-arcade/joystick-kid.png"
+    },
+    {
+      "id": "retro-arcade-laser-dj",
+      "name": "Laser DJ",
+      "src": "avatars/retro-arcade/laser-dj.png"
+    },
+    {
+      "id": "retro-arcade-vhs-visionary",
+      "name": "VHS Visionary",
+      "src": "avatars/retro-arcade/vhs-visionary.png"
+    }
+  ]
+}

@@ -125,10 +125,10 @@
 .avatar-section{margin:28px 0 38px}
 .avatar-heading{color:var(--live-text);text-transform:uppercase}
 .avatar-heading span{color:var(--live-muted)}
-.pack-tabs{background:none;padding:0;gap:8px;margin:14px 0 25px}
-.pack-tabs button{background:var(--live-panel);border:1px solid var(--live-border);color:var(--live-muted);border-radius:7px;min-height:44px}
+.pack-tabs{background:none;padding:0;gap:8px;margin:14px 0 25px;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:thin}
+.pack-tabs button{flex:0 0 auto;min-width:105px;white-space:nowrap;background:var(--live-panel);border:1px solid var(--live-border);color:var(--live-muted);border-radius:7px;min-height:44px;padding:8px 12px}
 .pack-tabs button.selected{background:var(--live-panel-2);border-color:var(--live-a);color:var(--live-a);box-shadow:none}
-.avatar-grid{grid-template-columns:repeat(4,1fr);gap:12px;max-height:none;overflow:visible}
+.avatar-grid{grid-template-columns:repeat(4,1fr);gap:12px;max-height:348px;overflow-y:auto;scrollbar-width:thin}
 .avatar-grid button{height:96px;background:var(--live-panel);border-color:var(--live-border);border-radius:11px;min-width:0}
 .avatar-grid button.picked{background:var(--live-panel-2);border:2px solid var(--live-a)}
 .avatar-grid img{width:85%;height:85%;object-fit:contain}

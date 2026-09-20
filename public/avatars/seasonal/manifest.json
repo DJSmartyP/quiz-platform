@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "seasonal",
+  "name": "Seasonal",
+  "alwaysEnabled": false,
+  "avatars": [
+    {
+      "id": "seasonal-snowman",
+      "name": "Snowman",
+      "src": "avatars/seasonal/snowman.png"
+    },
+    {
+      "id": "seasonal-festive-elf",
+      "name": "Festive Elf",
+      "src": "avatars/seasonal/festive-elf.png"
+    },
+    {
+      "id": "seasonal-reindeer",
+      "name": "Reindeer",
+      "src": "avatars/seasonal/reindeer.png"
+    },
+    {
+      "id": "seasonal-pumpkin",
+      "name": "Pumpkin",
+      "src": "avatars/seasonal/pumpkin.png"
+    },
+    {
+      "id": "seasonal-spooky-ghost",
+      "name": "Spooky Ghost",
+      "src": "avatars/seasonal/spooky-ghost.png"
+    },
+    {
+      "id": "seasonal-cupid-character",
+      "name": "Cupid Character",
+      "src": "avatars/seasonal/cupid-character.png"
+    },
+    {
+      "id": "seasonal-fireworks-robot",
+      "name": "Fireworks Robot",
+      "src": "avatars/seasonal/fireworks-robot.png"
+    },
+    {
+      "id": "seasonal-easter-bunny",
+      "name": "Easter Bunny",
+      "src": "avatars/seasonal/easter-bunny.png"
+    },
+    {
+      "id": "seasonal-beach-holiday-character",
+      "name": "Beach Holiday Character",
+      "src": "avatars/seasonal/beach-holiday-character.png"
+    },
+    {
+      "id": "seasonal-autumn-leaf-sprite",
+      "name": "Autumn Leaf Sprite",
+      "src": "avatars/seasonal/autumn-leaf-sprite.png"
+    },
+    {
+      "id": "seasonal-valentine-monster",
+      "name": "Valentine Monster",
+      "src": "avatars/seasonal/valentine-monster.png"
+    },
+    {
+      "id": "seasonal-new-year-party-bot",
+      "name": "New Year Party Bot",
+      "src": "avatars/seasonal/new-year-party-bot.png"
+    }
+  ]
+}

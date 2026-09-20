@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "historical-costume",
+  "name": "Historical / Costume",
+  "alwaysEnabled": false,
+  "avatars": [
+    {
+      "id": "historical-costume-victorian-inventor",
+      "name": "Victorian Inventor",
+      "src": "avatars/historical-costume/victorian-inventor.png"
+    },
+    {
+      "id": "historical-costume-roman-soldier",
+      "name": "Roman Soldier",
+      "src": "avatars/historical-costume/roman-soldier.png"
+    },
+    {
+      "id": "historical-costume-medieval-noble",
+      "name": "Medieval Noble",
+      "src": "avatars/historical-costume/medieval-noble.png"
+    },
+    {
+      "id": "historical-costume-1920s-detective",
+      "name": "1920s Detective",
+      "src": "avatars/historical-costume/1920s-detective.png"
+    },
+    {
+      "id": "historical-costume-cowboy",
+      "name": "Cowboy",
+      "src": "avatars/historical-costume/cowboy.png"
+    },
+    {
+      "id": "historical-costume-samurai-inspired-warrior",
+      "name": "Samurai Inspired Warrior",
+      "src": "avatars/historical-costume/samurai-inspired-warrior.png"
+    },
+    {
+      "id": "historical-costume-pharaoh-inspired-character",
+      "name": "Pharaoh Inspired Character",
+      "src": "avatars/historical-costume/pharaoh-inspired-character.png"
+    },
+    {
+      "id": "historical-costume-court-jester",
+      "name": "Court Jester",
+      "src": "avatars/historical-costume/court-jester.png"
+    },
+    {
+      "id": "historical-costume-renaissance-artist",
+      "name": "Renaissance Artist",
+      "src": "avatars/historical-costume/renaissance-artist.png"
+    },
+    {
+      "id": "historical-costume-explorer-captain",
+      "name": "Explorer Captain",
+      "src": "avatars/historical-costume/explorer-captain.png"
+    },
+    {
+      "id": "historical-costume-regency-socialite",
+      "name": "Regency Socialite",
+      "src": "avatars/historical-costume/regency-socialite.png"
+    },
+    {
+      "id": "historical-costume-ancient-scholar",
+      "name": "Ancient Scholar",
+      "src": "avatars/historical-costume/ancient-scholar.png"
+    }
+  ]
+}

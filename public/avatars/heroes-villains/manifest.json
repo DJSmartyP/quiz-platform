@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "heroes-villains",
+  "name": "Heroes & Villains",
+  "alwaysEnabled": false,
+  "avatars": [
+    {
+      "id": "heroes-villains-flying-hero",
+      "name": "Flying Hero",
+      "src": "avatars/heroes-villains/flying-hero.png"
+    },
+    {
+      "id": "heroes-villains-tech-hero",
+      "name": "Tech Hero",
+      "src": "avatars/heroes-villains/tech-hero.png"
+    },
+    {
+      "id": "heroes-villains-masked-vigilante",
+      "name": "Masked Vigilante",
+      "src": "avatars/heroes-villains/masked-vigilante.png"
+    },
+    {
+      "id": "heroes-villains-speedster",
+      "name": "Speedster",
+      "src": "avatars/heroes-villains/speedster.png"
+    },
+    {
+      "id": "heroes-villains-sorcerer-hero",
+      "name": "Sorcerer Hero",
+      "src": "avatars/heroes-villains/sorcerer-hero.png"
+    },
+    {
+      "id": "heroes-villains-cosmic-hero",
+      "name": "Cosmic Hero",
+      "src": "avatars/heroes-villains/cosmic-hero.png"
+    },
+    {
+      "id": "heroes-villains-supervillain",
+      "name": "Supervillain",
+      "src": "avatars/heroes-villains/supervillain.png"
+    },
+    {
+      "id": "heroes-villains-mad-scientist",
+      "name": "Mad Scientist",
+      "src": "avatars/heroes-villains/mad-scientist.png"
+    },
+    {
+      "id": "heroes-villains-shadow-mastermind",
+      "name": "Shadow Mastermind",
+      "src": "avatars/heroes-villains/shadow-mastermind.png"
+    },
+    {
+      "id": "heroes-villains-ice-villain",
+      "name": "Ice Villain",
+      "src": "avatars/heroes-villains/ice-villain.png"
+    },
+    {
+      "id": "heroes-villains-fire-hero",
+      "name": "Fire Hero",
+      "src": "avatars/heroes-villains/fire-hero.png"
+    },
+    {
+      "id": "heroes-villains-gadget-hero",
+      "name": "Gadget Hero",
+      "src": "avatars/heroes-villains/gadget-hero.png"
+    }
+  ]
+}
