@@ -1,6 +1,6 @@
-# Phantom Peak Quiz Studio
+# QuizForge
 
-Interactive review build for the proposed quiz platform. The complete product plan is in [BUILD_SPEC.md](BUILD_SPEC.md).
+Interactive review build for the QuizForge creator platform and its default PixelPlay live theme. The complete product plan is in [BUILD_SPEC.md](BUILD_SPEC.md), and the mockup gap list is in [DESIGN_TODO.md](DESIGN_TODO.md).
 
 ## Preview
 
@@ -15,7 +15,8 @@ The organiser workspace, quiz editor, host console, main screen, and player view
 
 ## Scope of this review build
 
-- Twelve sample question formats, host progression, answer submission, score calculation, leaderboard, and a small prompt editor.
+- Twelve sample question formats, host progression, answer submission, visible countdowns, score calculation, round-only scores, cumulative leaderboard, and a small prompt editor.
+- Anagrams have an editable answer, a saved jumble, and letters that progressively lock into place while the timer runs.
 - All 35 supplied avatars: 10 Standard, 12 Platypus, 13 Sci-Fi. The Sci-Fi pack includes Hologram.
 - The live game in this review build is browser-local. A join link works as a navigation preview but different devices do not yet share a game.
 - Authentication, persistent quizzes, Firestore multiplayer, security rules, media, PDF export, and the operational admin dashboard are defined in the build specification and are not implemented in this preview.

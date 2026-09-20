@@ -13,12 +13,13 @@ export type Question = {
   answer?: string | string[] | Record<string, string> | number | boolean
   tolerance?: number
   explanation?: string
+  scramble?: string
 }
 
 export type Player = { id: string; name: string; avatarId: string; score: number }
 export type Response = { playerId: string; questionId: string; value: unknown; submittedAt: number }
 export type Grade = { playerId: string; questionId: string; points: number; committed: boolean }
-export type Phase = 'lobby' | 'round-intro' | 'question' | 'open' | 'closed' | 'reveal' | 'scores' | 'final' | 'thanks' | 'break' | 'closed-game'
+export type Phase = 'lobby' | 'round-intro' | 'question' | 'open' | 'closed' | 'reveal' | 'scores' | 'round-scores' | 'leaderboard' | 'final' | 'thanks' | 'break' | 'closed-game'
 export type Game = {
   code: string
   title: string
@@ -28,6 +29,8 @@ export type Game = {
   stateVersion: number
   allowLateJoins: boolean
   openedAt?: number
+  closesAt?: number
+  closedAt?: number
   players: Player[]
   responses: Response[]
   grades: Grade[]
@@ -38,6 +41,64 @@ export const typeNames: Record<QuestionType, string> = {
   single: 'Single choice', multi: 'Multi-select', boolean: 'True or false', text: 'Text answer',
   free: 'Free response', number: 'Number', closest: 'Closest wins', ordering: 'Ordering',
   matching: 'Matching', categorise: 'Categorise', list: 'Multi-part list', anagram: 'Anagram',
+}
+
+export const typeInstructions: Record<QuestionType, string> = {
+  single: 'Choose one answer on your phone.',
+  multi: 'Select every correct answer, then submit.',
+  boolean: 'Choose true or false on your phone.',
+  text: 'Type the answer on your phone.',
+  free: 'Write a response for the host to mark.',
+  number: 'Enter a number on your phone.',
+  closest: 'Guess as close as you can to the target number.',
+  ordering: 'Tap the items in the correct order.',
+  matching: 'Match each item to its partner.',
+  categorise: 'Sort each item into a category.',
+  list: 'Enter every item requested.',
+  anagram: 'Unscramble the word before the timer runs out.',
+}
+
+export function scrambleWord(answer: string): string {
+  return answer.replace(/[A-Za-z]{2,}/g, word => {
+    const letters = word.toUpperCase().split('')
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const shuffled = [...letters]
+      for (let i = shuffled.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+      }
+      if (shuffled.join('') !== letters.join('')) return shuffled.join('')
+    }
+    const other = letters.findIndex(letter => letter !== letters[0])
+    if (other < 0) return word.toUpperCase()
+    ;[letters[0], letters[other]] = [letters[other], letters[0]]
+    return letters.join('')
+  })
+}
+
+export function anagramDisplay(answer: string, scramble: string, elapsedSeconds: number, duration: number) {
+  const source = answer.toUpperCase()
+  const positions = [...source].map((char, index) => /[A-Z]/.test(char) ? index : -1).filter(index => index >= 0)
+  const progress = Math.min(1, Math.max(0, elapsedSeconds / Math.max(duration, 1)))
+  const lockedCount = Math.min(Math.max(0, positions.length - 2), Math.floor(progress * positions.length))
+  const remaining = [...scramble.toUpperCase()].filter(char => /[A-Z]/.test(char))
+  const display = [...source]
+  for (const index of positions.slice(0, lockedCount)) {
+    const removeAt = remaining.indexOf(source[index])
+    if (removeAt >= 0) remaining.splice(removeAt, 1)
+  }
+  const expectedRemaining = positions.slice(lockedCount).map(index => source[index]).join('')
+  if (remaining.join('') === expectedRemaining) {
+    const swapAt = remaining.findIndex(letter => letter !== remaining[0])
+    if (swapAt > 0) {
+      const first = remaining[0]
+      remaining[0] = remaining[swapAt]
+      remaining[swapAt] = first
+    }
+  }
+  let cursor = 0
+  for (const index of positions.slice(lockedCount)) display[index] = remaining[cursor++] || source[index]
+  return { text: display.join(''), lockedCount, positions }
 }
 
 export const sampleQuestions: Question[] = [
@@ -57,11 +118,20 @@ export const sampleQuestions: Question[] = [
 
 export const freshGame = (): Game => ({
   code: 'PEAK7', title: 'The Great Quiz Night', phase: 'lobby', questionIndex: 0,
-  stateVersion: 1, allowLateJoins: true, players: [], responses: [], grades: [], questions: sampleQuestions,
+  stateVersion: 1, allowLateJoins: true, players: [], responses: [], grades: [],
+  questions: sampleQuestions.map(q => q.type === 'anagram' ? { ...q, scramble: scrambleWord(String(q.answer)) } : { ...q }),
 })
 
 export const normalise = (text: string) => text.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
 export const currentQuestion = (game: Game) => game.questions[game.questionIndex]
+export const isLastQuestionInRound = (game: Game) => game.questionIndex === game.questions.length - 1 || game.questions[game.questionIndex + 1]?.round !== currentQuestion(game)?.round
+export const roundPoints = (game: Game, playerId: string, round: string) => game.grades
+  .filter(g => g.playerId === playerId && g.committed && game.questions.find(q => q.id === g.questionId)?.round === round)
+  .reduce((total, g) => total + g.points, 0)
+export const rankedRound = (game: Game, round: string) => [...game.players]
+  .map(player => ({ ...player, roundScore: roundPoints(game, player.id, round) }))
+  .sort((a, b) => b.roundScore - a.roundScore || a.name.localeCompare(b.name))
+  .map((player, index, players) => ({ ...player, rank: players.findIndex(p => p.roundScore === player.roundScore) + 1 || index + 1 }))
 export const responseFor = (game: Game, playerId: string, questionId: string) => game.responses.find(r => r.playerId === playerId && r.questionId === questionId)
 export const gradeFor = (game: Game, playerId: string, questionId: string) => game.grades.find(g => g.playerId === playerId && g.questionId === questionId)
 

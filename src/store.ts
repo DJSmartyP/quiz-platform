@@ -1,9 +1,16 @@
 import { useSyncExternalStore } from 'react'
-import { currentQuestion, freshGame, gradeFor, normalise, ranked, responseFor, scoreAnswer, type Game, type Phase } from './model'
+import { currentQuestion, freshGame, gradeFor, isLastQuestionInRound, normalise, ranked, responseFor, scoreAnswer, scrambleWord, type Game, type Phase } from './model'
 
 const key = 'quiz-platform-demo-v1'
 let game: Game = (() => {
-  try { return JSON.parse(localStorage.getItem(key) || '') as Game } catch { return freshGame() }
+  try {
+    const loaded = JSON.parse(localStorage.getItem(key) || '') as Game
+    loaded.questions = loaded.questions.map(q => q.type === 'anagram' && !q.scramble ? { ...q, scramble: scrambleWord(String(q.answer)) } : q)
+    if (loaded.phase === 'open' && loaded.openedAt && !loaded.closesAt) loaded.closesAt = loaded.openedAt + (loaded.questions[loaded.questionIndex].duration || 30) * 1000
+    if (loaded.phase === 'scores' && isLastQuestionInRound(loaded)) loaded.phase = 'round-scores'
+    localStorage.setItem(key, JSON.stringify(loaded))
+    return loaded
+  } catch { return freshGame() }
 })()
 const listeners = new Set<() => void>()
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel(key) : null
@@ -27,6 +34,23 @@ export function update(fn: (draft: Game) => void) {
   save(draft)
 }
 export function resetGame() { save(freshGame()) }
+export function jumpToQuestion(index: number) {
+  if (!Number.isInteger(index) || index < 0 || index >= game.questions.length) return
+  update(d => {
+    const questionId = d.questions[index].id
+    for (const grade of d.grades.filter(g => g.questionId === questionId && g.committed)) {
+      const player = d.players.find(p => p.id === grade.playerId)
+      if (player) player.score = Math.max(0, player.score - grade.points)
+    }
+    d.responses = d.responses.filter(r => r.questionId !== questionId)
+    d.grades = d.grades.filter(g => g.questionId !== questionId)
+    d.questionIndex = index
+    d.phase = 'question'
+    d.openedAt = undefined
+    d.closesAt = undefined
+    d.closedAt = undefined
+  })
+}
 export function joinGame(name: string, avatarId: string) {
   const trimmed = name.trim().replace(/\s+/g, ' ')
   if (!trimmed || trimmed.length > 24) throw new Error('Choose a name of 1–24 characters.')
@@ -40,19 +64,23 @@ export function joinGame(name: string, avatarId: string) {
 }
 export function submitAnswer(playerId: string, value: unknown) {
   const q = currentQuestion(game)
-  if (!q || game.phase !== 'open') throw new Error('Answers are closed.')
+  if (!q || game.phase !== 'open' || (game.closesAt && Date.now() >= game.closesAt)) throw new Error('Answers are closed.')
   const existing = responseFor(game, playerId, q.id)
   if (existing && q.type !== 'anagram') throw new Error('Your answer is already locked in.')
   if (existing && q.type === 'anagram' && gradeFor(game, playerId, q.id)?.points) throw new Error('You already solved this anagram.')
+  if (existing && q.type === 'anagram' && Date.now() - existing.submittedAt < 1000) throw new Error('Wait a moment before guessing again.')
+  const seconds = (Date.now() - (game.openedAt || Date.now())) / 1000
+  const anagramPoints = q.type === 'anagram' ? scoreAnswer(q, value, seconds) : 0
   update(d => {
     d.responses = d.responses.filter(r => !(r.playerId === playerId && r.questionId === q.id))
     d.responses.push({ playerId, questionId: q.id, value, submittedAt: Date.now() })
-    if (q.type === 'anagram') {
-      const seconds = (Date.now() - (d.openedAt || Date.now())) / 1000
-      const points = scoreAnswer(q, value, seconds)
-      if (points > 0) d.grades.push({ playerId, questionId: q.id, points, committed: false })
-    }
+    if (anagramPoints > 0) d.grades.push({ playerId, questionId: q.id, points: anagramPoints, committed: false })
   })
+  return q.type === 'anagram' ? anagramPoints > 0 : undefined
+}
+export function expireAnswers() {
+  if (game.phase !== 'open' || !game.closesAt || Date.now() < game.closesAt) return
+  update(d => { if (d.phase === 'open' && d.closesAt && Date.now() >= d.closesAt) { d.phase = 'closed'; d.closedAt = d.closesAt } })
 }
 export function setGrade(playerId: string, points: number) {
   const q = currentQuestion(game)
@@ -78,7 +106,7 @@ export function finaliseQuestion() {
       else d.grades.push({ playerId: player.id, questionId: q.id, points, committed: true })
       player.score += points
     }
-    d.phase = 'scores'
+    d.phase = isLastQuestionInRound(d) ? 'round-scores' : 'scores'
   })
 }
 export function hostAction() {
@@ -87,22 +115,23 @@ export function hostAction() {
   update(d => {
     if (phase === 'lobby') d.phase = 'round-intro'
     else if (phase === 'round-intro') d.phase = 'question'
-    else if (phase === 'question') { d.phase = 'open'; d.openedAt = Date.now() }
-    else if (phase === 'open') d.phase = 'closed'
+    else if (phase === 'question') { d.phase = 'open'; d.openedAt = Date.now(); d.closesAt = d.openedAt + (d.questions[d.questionIndex].duration || 30) * 1000; d.closedAt = undefined }
+    else if (phase === 'open') { d.phase = 'closed'; d.closedAt = Date.now() }
     else if (phase === 'closed') d.phase = 'reveal'
     else if (phase === 'scores') {
+      if (isLastQuestionInRound(d)) d.phase = 'round-scores'
+      else { d.questionIndex += 1; d.phase = 'question' }
+    }
+    else if (phase === 'round-scores') d.phase = 'leaderboard'
+    else if (phase === 'leaderboard') {
       if (d.questionIndex === d.questions.length - 1) d.phase = 'final'
-      else {
-        const round = d.questions[d.questionIndex].round
-        d.questionIndex += 1
-        d.phase = d.questions[d.questionIndex].round === round ? 'question' : 'round-intro'
-      }
+      else { d.questionIndex += 1; d.phase = 'round-intro' }
     } else if (phase === 'final') d.phase = 'thanks'
     else if (phase === 'thanks') d.phase = 'closed-game'
   })
 }
 export function takeBreak() {
-  if (!['scores', 'round-intro'].includes(game.phase)) return
+  if (!['scores', 'round-scores', 'leaderboard', 'round-intro'].includes(game.phase)) return
   update(d => { d.returnPhase = d.phase; d.phase = 'break' })
 }
 export function resumeBreak() { if (game.phase === 'break') update(d => { d.phase = d.returnPhase || 'scores'; d.returnPhase = undefined }) }
@@ -114,7 +143,7 @@ export function voidQuestion() {
       if (existing?.committed) player.score -= existing.points
     }
     d.grades = d.grades.filter(g => g.questionId !== q.id)
-    d.phase = 'scores'
+    d.phase = isLastQuestionInRound(d) ? 'round-scores' : 'scores'
   })
 }
 export function overrideScore(playerId: string, newTotal: number) {
@@ -123,6 +152,6 @@ export function overrideScore(playerId: string, newTotal: number) {
 export function publicRanks() { return ranked(game.players) }
 export function actionLabel(phase: Phase): string {
   return ({ lobby: 'Start quiz', 'round-intro': 'Show first question', question: 'Open answers', open: 'Close answers',
-    closed: 'Reveal answer', reveal: 'Finalise scores', scores: 'Continue', final: 'Thanks for playing',
+    closed: 'Reveal answer', reveal: 'Finalise scores', scores: 'Next question', 'round-scores': 'Show leaderboard', leaderboard: 'Continue', final: 'Thanks for playing',
     thanks: 'Close session', break: 'Resume quiz', 'closed-game': 'Session closed' } as Record<Phase, string>)[phase]
 }
