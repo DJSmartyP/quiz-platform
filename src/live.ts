@@ -25,7 +25,7 @@ const controllerId = crypto.randomUUID() // one controller per browser tab
 
 type PublicDocument = { hostUid: string; controllerId: string; memberUids: string[]; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
 type PrivateDocument = { hostUid: string; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
-type HostCommand = { type: 'advance' | 'break' | 'resume' | 'void' | 'jump' | 'grade'; index?: number; playerId?: string; points?: number }
+type HostCommand = { type: 'advance' | 'break' | 'resume' | 'void' | 'grade'; playerId?: string; points?: number }
 let liveHostCode: string | null = null
 let playerConnection: { code: string; uid: string; stop: () => void } | null = null
 const codeAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -173,14 +173,6 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
       next.grades = next.grades.filter(g => g.questionId !== questionId)
       next.phase = isLastQuestionInRound(next) ? 'round-scores' : 'scores'
       next.stateVersion += 1
-    } else if (command.type === 'jump' && command.index !== undefined && command.index >= 0 && command.index < base.questions.length) {
-      next = structuredClone(base)
-      next.questionIndex = command.index
-      next.phase = 'question'
-      next.openedAt = undefined
-      next.closesAt = undefined
-      next.closedAt = undefined
-      next.stateVersion += 1
     }
     if (next === base) return
     next.responses = [] // submissions stay in their own protected records
@@ -195,7 +187,7 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
   })
 }
 
-export function followLiveScreen(code: string, onError: (message: string) => void) {
+export function followLiveScreen(code: string, onError: (message: string) => void, onConnected: () => void) {
   const upper = code.toUpperCase()
   let publicState: Game | null = null
   let roster: Player[] = []
@@ -204,6 +196,7 @@ export function followLiveScreen(code: string, onError: (message: string) => voi
     if (!snap.exists()) { onError('No live game exists with that code.'); return }
     publicState = timedGame(snap.data() as PublicDocument)
     render()
+    onConnected()
   }, error => onError(error.message))
   const stopRoster = onSnapshot(collection(screenDb, 'liveGames', upper, 'players'), result => {
     roster = result.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0 }))
