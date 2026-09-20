@@ -16,7 +16,7 @@ Reference: the supplied QuizForge design pack (creator host console, PixelPlay m
 - [ ] Build a full round editor: add, delete, and rename rounds as first-class objects; choose and fully edit every question type; validate answers and timers. The current editor can rename a question's round, duplicate a question, and change question order, so it can already form rounds of different lengths and mixes of existing types.
 - [ ] Add per-question score feedback, round-only score screen, and cumulative leaderboard controls to the host console, including clear previews of what will appear next.
 - [ ] Add dedicated lobby, break, round-intro, leaderboard, and final-result layouts with the avatar emphasis shown in the design pack.
-- [ ] Implement a real-time backend for separate phones and devices. The current demo synchronises tabs only within the same browser origin; a GitHub Pages deployment is a static preview.
+- [ ] Complete the cross-device acceptance test for the Firestore mode with one Host, one Main Screen, and two separate Player devices. The local demo still synchronises tabs in one browser.
 - [ ] Add a theme selector and preserve the PixelPlay theme as the default. Quiz themes should override colours and optional decoration while retaining the accessibility rules.
 - [ ] Replace remaining legacy light-theme CSS with token-based creator and live components. Extract reusable `AnswerTile`, `TimerBar`, `GameCode`, `ScoreRow`, and `AvatarFrame` components.
 

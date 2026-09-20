@@ -18,7 +18,7 @@ The organiser workspace, quiz editor, host console, main screen, and player view
 - Twelve sample question formats, host progression, answer submission, visible countdowns, score calculation, round-only scores, cumulative leaderboard, and a small prompt editor.
 - Anagrams have an editable answer, a saved jumble, and letters that progressively lock into place while the timer runs.
 - All 143 supplied avatars across 12 packs, including the 13 transparent Sci-Fi cutouts. The original Standard and Platypus images are preserved.
-- A Firestore-based Host/Main Screen/Player implementation is in progress. Its rules are deployed, but Authentication and cross-device acceptance tests are still pending; the published build remains browser-local.
+- The Firestore Host/Main Screen/Player mode is wired alongside the browser-local demo. Google Host and anonymous Player sign-in are enabled; a full cross-device game is the next acceptance test.
 - The admin dashboard can inspect the signed-in Host's active live session and export its scores. Persistent quiz storage, media, PDF export, account approval, and multi-game administration remain in the build specification.
 
 ## Build and deploy
