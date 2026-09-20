@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { currentQuestion, freshGame, gradeFor, isLastQuestionInRound, normalise, ranked, responseFor, scoreAnswer, scrambleWord, type Game, type Phase } from './model'
+import { advanceGame, breakGame, resumeGame } from './gameEngine'
 
 const key = 'quiz-platform-demo-v1'
 let game: Game = (() => {
@@ -13,6 +14,7 @@ let game: Game = (() => {
   } catch { return freshGame() }
 })()
 const listeners = new Set<() => void>()
+let liveRole: 'host' | 'player' | 'screen' | null = null
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel(key) : null
 
 function notify() { listeners.forEach(listener => listener()) }
@@ -22,18 +24,36 @@ function save(next: Game) {
   channel?.postMessage(next)
   notify()
 }
-channel?.addEventListener('message', event => { game = event.data as Game; notify() })
-window.addEventListener('storage', event => { if (event.key === key && event.newValue) { game = JSON.parse(event.newValue) as Game; notify() } })
+channel?.addEventListener('message', event => { if (!liveRole) { game = event.data as Game; notify() } })
+window.addEventListener('storage', event => { if (!liveRole && event.key === key && event.newValue) { game = JSON.parse(event.newValue) as Game; notify() } })
 
 export function useGame() { return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb) }, () => game) }
 export function getGame() { return game }
+export function getLiveRole() { return liveRole }
+export function receiveLiveGame(next: Game, role: 'host' | 'player' | 'screen') {
+  const ownId = role === 'player' ? sessionStorage.getItem('quiz-demo-player-id') : null
+  const ownResponses = ownId && liveRole === 'player' ? game.responses.filter(r => r.playerId === ownId && r.questionId === next.questions[next.questionIndex]?.id) : []
+  const ownPlayer = ownId && liveRole === 'player' ? game.players.find(p => p.id === ownId) : undefined
+  liveRole = role
+  game = { ...next,
+    players: ownPlayer && !next.players.some(p => p.id === ownPlayer.id) ? [...next.players, ownPlayer] : next.players,
+    responses: role === 'player' ? ownResponses : next.responses,
+  }
+  notify()
+}
+export function receiveOwnLiveResponse(response: Game['responses'][number] | null) {
+  if (liveRole !== 'player') return
+  game = { ...game, responses: response ? [response] : [] }
+  notify()
+}
 export function update(fn: (draft: Game) => void) {
+  if (liveRole) throw new Error('Use the Host controls for a live game.')
   const draft = structuredClone(game)
   fn(draft)
   draft.stateVersion += 1
   save(draft)
 }
-export function resetGame() { save(freshGame()) }
+export function resetGame() { if (liveRole) throw new Error('A live game cannot be reset as a local demo.'); save(freshGame()) }
 export function jumpToQuestion(index: number) {
   if (!Number.isInteger(index) || index < 0 || index >= game.questions.length) return
   update(d => {
@@ -79,6 +99,7 @@ export function submitAnswer(playerId: string, value: unknown) {
   return q.type === 'anagram' ? anagramPoints > 0 : undefined
 }
 export function expireAnswers() {
+  if (liveRole) return // Live expiry is a versioned Host transition, never a Player timer write.
   if (game.phase !== 'open' || !game.closesAt || Date.now() < game.closesAt) return
   update(d => { if (d.phase === 'open' && d.closesAt && Date.now() >= d.closesAt) { d.phase = 'closed'; d.closedAt = d.closesAt } })
 }
@@ -89,52 +110,20 @@ export function setGrade(playerId: string, points: number) {
     d.grades.push({ playerId, questionId: q.id, points: Math.max(0, Math.round(points)), committed: false })
   })
 }
-export function finaliseQuestion() {
-  const q = currentQuestion(game)
-  if (!q || game.phase !== 'reveal') return
-  update(d => {
-    const numeric = d.responses.filter(r => r.questionId === q.id && Number.isFinite(Number(r.value)))
-    const closestDistance = q.type === 'closest' && numeric.length
-      ? Math.min(...numeric.map(r => Math.abs(Number(r.value) - Number(q.answer)))) : Infinity
-    for (const player of d.players) {
-      const existing = d.grades.find(g => g.playerId === player.id && g.questionId === q.id)
-      if (existing?.committed) continue
-      const response = d.responses.find(r => r.playerId === player.id && r.questionId === q.id)
-      let points = existing?.points ?? (response ? scoreAnswer(q, response.value, (response.submittedAt - (d.openedAt || response.submittedAt)) / 1000) : 0)
-      if (q.type === 'closest') points = response && Math.abs(Number(response.value) - Number(q.answer)) === closestDistance ? q.points : 0
-      if (existing) { existing.points = points; existing.committed = true }
-      else d.grades.push({ playerId: player.id, questionId: q.id, points, committed: true })
-      player.score += points
-    }
-    d.phase = isLastQuestionInRound(d) ? 'round-scores' : 'scores'
-  })
+export function finaliseQuestion(expectedVersion = game.stateVersion) {
+  if (game.stateVersion === expectedVersion && game.phase === 'reveal') save(advanceGame(game))
 }
-export function hostAction() {
-  const phase = game.phase
-  if (phase === 'reveal') return finaliseQuestion()
-  update(d => {
-    if (phase === 'lobby') d.phase = 'round-intro'
-    else if (phase === 'round-intro') d.phase = 'question'
-    else if (phase === 'question') { d.phase = 'open'; d.openedAt = Date.now(); d.closesAt = d.openedAt + (d.questions[d.questionIndex].duration || 30) * 1000; d.closedAt = undefined }
-    else if (phase === 'open') { d.phase = 'closed'; d.closedAt = Date.now() }
-    else if (phase === 'closed') d.phase = 'reveal'
-    else if (phase === 'scores') {
-      if (isLastQuestionInRound(d)) d.phase = 'round-scores'
-      else { d.questionIndex += 1; d.phase = 'question' }
-    }
-    else if (phase === 'round-scores') d.phase = 'leaderboard'
-    else if (phase === 'leaderboard') {
-      if (d.questionIndex === d.questions.length - 1) d.phase = 'final'
-      else { d.questionIndex += 1; d.phase = 'round-intro' }
-    } else if (phase === 'final') d.phase = 'thanks'
-    else if (phase === 'thanks') d.phase = 'closed-game'
-  })
+export function hostAction(expectedVersion = game.stateVersion) {
+  if (game.stateVersion !== expectedVersion) return
+  const next = advanceGame(game)
+  if (next !== game) save(next)
 }
-export function takeBreak() {
-  if (!['scores', 'round-scores', 'leaderboard', 'round-intro'].includes(game.phase)) return
-  update(d => { d.returnPhase = d.phase; d.phase = 'break' })
+export function takeBreak(expectedVersion = game.stateVersion) {
+  if (game.stateVersion !== expectedVersion) return
+  const next = breakGame(game)
+  if (next !== game) save(next)
 }
-export function resumeBreak() { if (game.phase === 'break') update(d => { d.phase = d.returnPhase || 'scores'; d.returnPhase = undefined }) }
+export function resumeBreak(expectedVersion = game.stateVersion) { if (game.stateVersion === expectedVersion) { const next = resumeGame(game); if (next !== game) save(next) } }
 export function voidQuestion() {
   const q = currentQuestion(game)
   update(d => {
