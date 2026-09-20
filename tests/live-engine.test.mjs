@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { advanceGame, breakGame, resumeGame } from '../src/gameEngine.ts'
 import { publicGame } from '../src/publicGame.ts'
+import { answerLabel, resultForAnswer } from '../src/reveal.ts'
 
 const question = (id, round, answer = 'Mars') => ({ id, round, type: 'single', prompt: `Question ${id}`, options: ['Mars', 'Venus'], answer, points: 1000, duration: 30 })
 const player = id => ({ id, name: id, avatarId: 'default-blue', score: 0 })
@@ -73,4 +74,30 @@ test('public state withholds future questions, answer keys and private submissio
   const revealed = publicGame({ ...game, phase: 'reveal' })
   assert.equal(revealed.questions[0].answer, 'Mars')
   assert.equal(revealed.questions[1].answer, undefined)
+})
+
+test('own reveal distinguishes right, wrong, partial and unmarked answers', () => {
+  const q = question('q1', 'Round 1')
+  const response = value => ({ playerId: 'a', questionId: 'q1', value, submittedAt: 3000 })
+  assert.deepEqual(resultForAnswer(q, response('Mars'), undefined, [], 1000), { points: 1000, verdict: 'correct' })
+  assert.deepEqual(resultForAnswer(q, response('Venus'), undefined, [], 1000), { points: 0, verdict: 'incorrect' })
+  assert.deepEqual(resultForAnswer(q, undefined, undefined, [], 1000), { points: 0, verdict: 'incorrect' })
+  const manual = { ...q, type: 'free', answer: undefined }
+  assert.deepEqual(resultForAnswer(manual, response('A creative reply'), undefined, [], 1000), { points: 0, verdict: 'pending' })
+  assert.deepEqual(resultForAnswer(manual, response('A creative reply'), { points: 500 }, [], 1000), { points: 500, verdict: 'partial' })
+  const anagram = { ...q, type: 'anagram', answer: 'Platypus' }
+  assert.deepEqual(resultForAnswer(anagram, response('platypus'), undefined, [], -28000), { points: 0, verdict: 'correct' })
+  assert.equal(answerLabel({ France: 'Paris', Italy: 'Rome' }), 'France → Paris · Italy → Rome')
+})
+
+test('closest-answer reveal uses the submitted field, including ties', () => {
+  const q = { ...question('q1', 'Round 1', 100), type: 'closest' }
+  const replies = [
+    { playerId: 'a', questionId: 'q1', value: 99, submittedAt: 3000 },
+    { playerId: 'b', questionId: 'q1', value: 101, submittedAt: 3000 },
+    { playerId: 'c', questionId: 'q1', value: 90, submittedAt: 3000 },
+  ]
+  assert.equal(resultForAnswer(q, replies[0], undefined, replies, 1000).verdict, 'correct')
+  assert.equal(resultForAnswer(q, replies[1], undefined, replies, 1000).verdict, 'correct')
+  assert.equal(resultForAnswer(q, replies[2], undefined, replies, 1000).verdict, 'incorrect')
 })

@@ -21,10 +21,10 @@ The live game implementation uses the existing GitHub Pages site plus Firebase A
 - `liveGames/{code}/private/engine`: Host-only quiz, answer keys, grades and authoritative transition state.
 - `liveGames/{code}/players/{uid}`: Player name/avatar; readable to connected screens for the roster.
 - `liveGames/{code}/responses/{uid}_{questionId}`: one private submission per Player and question.
-- `liveGames/{code}/results/{uid}_{questionId}`: that Player's released score for the question.
+- `liveGames/{code}/results/{uid}_{questionId}`: that Player's released score and verdict for the question. The Host writes this on reveal and updates it after marking or finalisation.
 Host access is granted only to the verified Google account `nickpatel.trainer@gmail.com` by Firestore Security Rules. The web client cannot grant Host access.
 
-The Host changes phase and increments `stateVersion` in a Firestore transaction. Main Screen and Player routes stay loaded and rerender from listeners. A Player submission transaction writes a deterministic ID and the UI waits for server acknowledgement. The timer uses one server timestamp on opening answers; no second-by-second Firestore writes occur.
+The Host changes phase and increments `stateVersion` in a Firestore transaction. Main Screen and Player routes stay loaded and rerender from listeners. A Player submission transaction writes a deterministic ID and the UI waits for server acknowledgement. At reveal, the Main Screen highlights the answer choices and each Player sees their own answer, verdict, and points. The GM sees the private answer key before reveal. The timer uses one server timestamp on opening answers; no second-by-second Firestore writes occur.
 
 ## Verification
 

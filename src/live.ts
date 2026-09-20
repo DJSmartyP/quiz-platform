@@ -4,6 +4,7 @@ import { collection, doc, getDoc, getDocs, getFirestore, onSnapshot, query, runT
 import { advanceGame, breakGame, resumeGame } from './gameEngine'
 import { currentQuestion, isLastQuestionInRound, type Game, type Player, type Response } from './model'
 import { publicGame } from './publicGame'
+import { resultForAnswer, type OwnResult } from './reveal'
 import { getGame, receiveLiveGame, receiveOwnLiveResponse } from './store'
 
 // Firebase web configuration is public; Firestore rules enforce access.
@@ -161,6 +162,23 @@ export async function takeLiveControl() {
   })
 }
 
+/** Admin inspection is scoped to the Host's current session; rules protect private records. */
+export async function inspectAdminSession(): Promise<Game> {
+  const uid = await hostUid(false)
+  const code = localStorage.getItem('quiz-live-host-code')
+  if (!code) throw new Error('Start or reconnect a live game from the Host console first.')
+  const [engine, players] = await Promise.all([
+    getDoc(doc(hostDb, 'liveGames', code, 'private', 'engine')),
+    getDocs(collection(hostDb, 'liveGames', code, 'players')),
+  ])
+  if (!engine.exists() || engine.data().hostUid !== uid) throw new Error('This live session is unavailable to your account.')
+  const game = timedGame(engine.data() as PrivateDocument)
+  const questionId = currentQuestion(game)?.id
+  const answers = questionId ? await getDocs(query(collection(hostDb, 'liveGames', code, 'responses'), where('questionId', '==', questionId))) : null
+  const roster = players.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0 }))
+  return { ...withRoster(game, roster), responses: answers?.docs.map(item => item.data() as Response) || [] }
+}
+
 export async function liveHostCommand(expectedVersion: number, command: HostCommand) {
   if (!liveHostCode) throw new Error('Connect to the live game first.')
   const code = liveHostCode
@@ -169,7 +187,7 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
   const prior = getGame()
   const questionId = prior.questions[prior.questionIndex]?.id
   const playerSnapshot = await getDocs(collection(hostDb, 'liveGames', code, 'players'))
-  const responseSnapshot = command.type === 'advance' && prior.phase === 'reveal' && questionId
+  const responseSnapshot = (command.type === 'advance' && ['closed', 'reveal'].includes(prior.phase) || command.type === 'grade' && prior.phase === 'reveal') && questionId
     ? await getDocs(query(collection(hostDb, 'liveGames', code, 'responses'), where('questionId', '==', questionId))) : null
   const roster = playerSnapshot.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0 } as Player))
   const responses = responseSnapshot?.docs.map(item => item.data() as Response) || []
@@ -209,9 +227,21 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
     const data = { stateVersion: next.stateVersion, game: serialise(publicGame(next)) }
     tx.update(privateRef, { stateVersion: next.stateVersion, game: serialise(next), ...(next.phase === 'open' && base.phase !== 'open' ? { openedAtServer: serverTimestamp() } : {}) })
     tx.update(publicRef, { ...data, ...(next.phase === 'open' && base.phase !== 'open' ? { openedAtServer: serverTimestamp() } : {}) })
-    if (command.type === 'advance' && base.phase === 'reveal') {
-      for (const grade of next.grades.filter(g => g.questionId === questionId && g.committed)) {
-        tx.set(doc(hostDb, 'liveGames', code, 'results', `${grade.playerId}_${questionId}`), { playerId: grade.playerId, questionId, points: grade.points })
+    if (next.phase === 'reveal' && (base.phase === 'closed' || command.type === 'grade')) {
+      const question = currentQuestion(next)
+      for (const player of next.players) {
+        if (command.type === 'grade' && player.id !== command.playerId) continue
+        const response = responses.find(item => item.playerId === player.id && item.questionId === question.id)
+        const grade = next.grades.find(item => item.playerId === player.id && item.questionId === question.id)
+        const result = resultForAnswer(question, response, grade, responses, next.openedAt)
+        tx.set(doc(hostDb, 'liveGames', code, 'results', `${player.id}_${question.id}`), { playerId: player.id, questionId: question.id, ...result })
+      }
+    } else if (command.type === 'advance' && base.phase === 'reveal') {
+      for (const player of next.players) {
+        const grade = next.grades.find(item => item.playerId === player.id && item.questionId === questionId && item.committed)
+        if (!grade) continue
+        const result = resultForAnswer(currentQuestion(next), responses.find(item => item.playerId === player.id && item.questionId === questionId), grade, responses, next.openedAt)
+        tx.set(doc(hostDb, 'liveGames', code, 'results', `${player.id}_${questionId}`), { playerId: player.id, questionId, ...result })
       }
     }
   })
@@ -235,7 +265,7 @@ export function followLiveScreen(code: string, onError: (message: string) => voi
   return () => { stopGame(); stopRoster() }
 }
 
-export async function joinLiveGame(code: string, name: string, avatarId: string, onReady: (questionId: string) => void, onResult: (points: number | null) => void, onError: (message: string) => void) {
+export async function joinLiveGame(code: string, name: string, avatarId: string, onReady: (questionId: string) => void, onResult: (result: OwnResult | null) => void, onError: (message: string) => void) {
   const upper = code.trim().toUpperCase()
   const publicRef = doc(playerDb, 'liveGames', upper)
   if (!(await getDoc(publicRef)).exists()) return null
@@ -284,7 +314,7 @@ export async function joinLiveGame(code: string, name: string, avatarId: string,
         onReady(questionId)
       }, error => onError(`Answer status unavailable: ${error.message}`))
       stopResult = onSnapshot(doc(playerDb, 'liveGames', upper, 'results', `${uid}_${questionId}`), own => {
-        if (!own.metadata.hasPendingWrites) onResult(own.exists() ? Number(own.data().points) : null)
+        if (!own.metadata.hasPendingWrites) onResult(own.exists() ? { points: Number(own.data().points), verdict: own.data().verdict as OwnResult['verdict'] } : null)
       }, error => onError(`Result unavailable: ${error.message}`))
     }
   }, error => onError(`Game sync unavailable: ${error.message}`))
@@ -298,7 +328,7 @@ export async function joinLiveGame(code: string, name: string, avatarId: string,
   return uid
 }
 
-export async function reconnectLivePlayer(code: string, onReady: (questionId: string) => void, onResult: (points: number | null) => void, onError: (message: string) => void) {
+export async function reconnectLivePlayer(code: string, onReady: (questionId: string) => void, onResult: (result: OwnResult | null) => void, onError: (message: string) => void) {
   const upper = code.toUpperCase()
   if (localStorage.getItem('quiz-live-player-code') !== upper) return null
   const uid = await playerUid()
