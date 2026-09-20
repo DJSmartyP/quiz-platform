@@ -44,18 +44,18 @@ export const typeNames: Record<QuestionType, string> = {
 }
 
 export const typeInstructions: Record<QuestionType, string> = {
-  single: 'Choose one answer on your phone.',
-  multi: 'Select every correct answer, then submit.',
-  boolean: 'Choose true or false on your phone.',
-  text: 'Type the answer on your phone.',
-  free: 'Write a response for the host to mark.',
-  number: 'Enter a number on your phone.',
-  closest: 'Guess as close as you can to the target number.',
-  ordering: 'Tap the items in the correct order.',
-  matching: 'Match each item to its partner.',
-  categorise: 'Sort each item into a category.',
-  list: 'Enter every item requested.',
-  anagram: 'Unscramble the word before the timer runs out.',
+  single: 'Tap one answer on your phone, then submit.',
+  multi: 'Tap every correct answer on your phone, then submit.',
+  boolean: 'Tap True or False on your phone, then submit.',
+  text: 'Type your answer on your phone, then submit.',
+  free: 'Write a response on your phone for the Host to mark.',
+  number: 'Enter the exact number on your phone, then submit.',
+  closest: 'Enter your best number guess on your phone. Closest wins.',
+  ordering: 'Tap the items on your phone in the correct order.',
+  matching: 'Choose a partner for each item on your phone.',
+  categorise: 'Choose a category for each item on your phone.',
+  list: 'Fill in each answer box on your phone, then submit.',
+  anagram: 'Type the unjumbled word on your phone before time runs out.',
 }
 
 export function scrambleWord(answer: string): string {
@@ -134,6 +134,17 @@ export const rankedRound = (game: Game, round: string) => [...game.players]
   .map((player, index, players) => ({ ...player, rank: players.findIndex(p => p.roundScore === player.roundScore) + 1 || index + 1 }))
 export const responseFor = (game: Game, playerId: string, questionId: string) => game.responses.find(r => r.playerId === playerId && r.questionId === questionId)
 export const gradeFor = (game: Game, playerId: string, questionId: string) => game.grades.find(g => g.playerId === playerId && g.questionId === questionId)
+
+export function isAnswerComplete(q: Question, answer: unknown): boolean {
+  if (q.type === 'matching' || q.type === 'categorise') {
+    const choices = answer && typeof answer === 'object' && !Array.isArray(answer) ? answer as Record<string, unknown> : {}
+    return Boolean(q.items?.length) && q.items!.every(item => typeof choices[item] === 'string' && Boolean((choices[item] as string).trim()))
+  }
+  if (q.type === 'ordering') return Boolean(q.items?.length) && Array.isArray(answer) && q.items!.every(item => answer.includes(item))
+  if (q.type === 'list') return Array.isArray(answer) && [0, 1, 2].every(index => typeof answer[index] === 'string' && Boolean(answer[index].trim()))
+  if (q.type === 'multi') return Array.isArray(answer) && answer.length > 0
+  return typeof answer === 'string' ? Boolean(answer.trim()) : answer !== undefined && answer !== null
+}
 
 export function scoreAnswer(q: Question, value: unknown, elapsedSeconds = 0): number {
   if (value === undefined || value === null || value === '') return 0

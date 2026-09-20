@@ -251,3 +251,20 @@
 .countdown.urgent strong{animation:timer-beat .8s ease-in-out infinite}
 @keyframes home-float{50%{transform:translateY(-10px)}}
 @keyframes timer-beat{50%{transform:scale(1.16)}}
+
+/* Make the format and its control instructions legible from across the room. */
+.screen-content{padding-top:12px;padding-bottom:12px}
+.screen-type{display:flex;align-items:stretch;gap:12px;margin-top:12px}
+.screen-type span{display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:185px;padding:9px 14px;border:1px solid var(--live-a);border-radius:10px;background:#34251f;text-transform:none;letter-spacing:0}
+.screen-type span small,.screen-type p b,.player-type small,.player-instructions b{display:block;font-size:10px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+.screen-type span strong{font-family:Manrope,sans-serif;font-size:18px;line-height:1.1;color:var(--live-text)}
+.screen-type p{display:flex;flex-direction:column;justify-content:center;gap:4px;flex:1;margin:0;padding:8px 14px;border:1px solid var(--live-border);border-radius:10px;background:var(--live-panel);color:var(--live-text);font-size:15px;line-height:1.3}
+.screen-type p b{color:var(--live-b)}
+.screen-question h1{min-height:140px;margin:12px 0 18px}
+.screen-options>div{min-height:86px}
+.player-type{display:inline-flex;flex-direction:column;gap:4px;padding:8px 11px;border:1px solid var(--live-b);border-radius:8px;background:#12303b;color:var(--live-text);font-size:15px;line-height:1.15}
+.player-type small{color:var(--live-b)}
+.player-question h1{margin:14px 0}
+.player-question-card .player-instructions{border-top:1px solid var(--live-border);padding-top:12px;color:var(--live-text);line-height:1.45}
+.player-instructions b{margin-bottom:4px;color:var(--live-b)}
+@media(max-width:750px){.screen-type{flex-wrap:wrap}.screen-type span{min-width:0}.screen-type p{min-width:100%}}
