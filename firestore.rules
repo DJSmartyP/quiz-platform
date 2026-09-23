@@ -14,6 +14,11 @@ service cloud.firestore {
       return approvedHost() && session(code).data.hostUid == request.auth.uid;
     }
 
+    match /quizTemplates/{quizId} {
+      // Quiz authoring is available only to the single approved administrator.
+      allow read, create, update, delete: if approvedHost();
+    }
+
     match /liveGames/{code} {
       allow get: if true; // Knowing the join code permits the public presentation state.
       allow list, delete: if false;

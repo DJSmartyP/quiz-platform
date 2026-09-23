@@ -1,8 +1,10 @@
 import { useSyncExternalStore } from 'react'
-import { currentQuestion, freshGame, gradeFor, isLastQuestionInRound, normalise, ranked, responseFor, scoreAnswer, scrambleWord, type Game, type Phase } from './model'
+import { currentQuestion, freshGame, gradeFor, isLastQuestionInRound, normalise, ranked, responseFor, scoreAnswer, scrambleWord, type Game, type Phase, type Question } from './model'
 import { advanceGame, breakGame, resumeGame } from './gameEngine'
 
 const key = 'quiz-platform-demo-v1'
+const libraryKey = 'quiz-platform-library-v1'
+const activeQuizKey = 'quiz-platform-active-quiz-v1'
 let game: Game = (() => {
   try {
     const loaded = JSON.parse(localStorage.getItem(key) || '') as Game
@@ -13,23 +15,71 @@ let game: Game = (() => {
     return loaded
   } catch { return freshGame() }
 })()
+export type QuizTemplate = { id: string; title: string; questions: Question[]; builtIn?: boolean; updatedAt: number }
+let quizLibrary: QuizTemplate[] = (() => {
+  try {
+    const loaded = JSON.parse(localStorage.getItem(libraryKey) || '') as QuizTemplate[]
+    if (Array.isArray(loaded) && loaded.length) return loaded
+  } catch { /* Migrate the existing single quiz below. */ }
+  return [{ id: 'quizforge-test', title: game.title, questions: structuredClone(game.questions), builtIn: true, updatedAt: Date.now() }]
+})()
+const canonicalTest = freshGame()
+const storedTest = quizLibrary.find(item => item.id === 'quizforge-test')
+const testTemplate: QuizTemplate = { id: 'quizforge-test', title: canonicalTest.title, questions: structuredClone(canonicalTest.questions), builtIn: true, updatedAt: storedTest?.updatedAt || Date.now() }
+quizLibrary = [testTemplate, ...quizLibrary.filter(item => item.id !== 'quizforge-test')]
+let activeQuizId = localStorage.getItem(activeQuizKey) || quizLibrary[0].id
+if (!quizLibrary.some(quiz => quiz.id === activeQuizId)) activeQuizId = quizLibrary[0].id
+if (activeQuizId === 'quizforge-test') game = { ...canonicalTest, code: game.code }
+let librarySnapshot = { quizzes: quizLibrary, activeQuizId }
+localStorage.setItem(libraryKey, JSON.stringify(quizLibrary))
+localStorage.setItem(activeQuizKey, activeQuizId)
 const listeners = new Set<() => void>()
 let liveRole: 'host' | 'player' | 'screen' | null = null
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel(key) : null
 
 function notify() { listeners.forEach(listener => listener()) }
+function persistLibrary() {
+  librarySnapshot = { quizzes: quizLibrary, activeQuizId }
+  localStorage.setItem(activeQuizKey, activeQuizId)
+  localStorage.setItem(libraryKey, JSON.stringify(quizLibrary))
+}
+function syncActiveQuiz(next: Game) {
+  const index = quizLibrary.findIndex(quiz => quiz.id === activeQuizId)
+  if (index < 0) return
+  const current = quizLibrary[index]
+  if (current.title === next.title && JSON.stringify(current.questions) === JSON.stringify(next.questions)) return
+  quizLibrary = quizLibrary.map((quiz, quizIndex) => quizIndex === index ? { ...quiz, title: next.title, questions: structuredClone(next.questions), updatedAt: Date.now() } : quiz)
+  persistLibrary()
+  // An edited quiz must start a new live session. Reusing the previous code
+  // would reconnect the Host to the old Firestore copy instead of these edits.
+  localStorage.removeItem('quiz-live-host-code')
+}
 function save(next: Game) {
   game = next
+  syncActiveQuiz(next)
   localStorage.setItem(key, JSON.stringify(next))
   channel?.postMessage(next)
   notify()
 }
 channel?.addEventListener('message', event => { if (!liveRole) { game = event.data as Game; notify() } })
 window.addEventListener('storage', event => { if (!liveRole && event.key === key && event.newValue) { game = JSON.parse(event.newValue) as Game; notify() } })
+window.addEventListener('storage', event => {
+  if (event.key !== libraryKey || !event.newValue) return
+  try { quizLibrary = JSON.parse(event.newValue) as QuizTemplate[]; activeQuizId = localStorage.getItem(activeQuizKey) || quizLibrary[0]?.id; librarySnapshot = { quizzes: quizLibrary, activeQuizId }; notify() } catch { /* Ignore incomplete cross-tab writes. */ }
+})
 
 export function useGame() { return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb) }, () => game) }
+export function useQuizLibrary() { return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb) }, () => librarySnapshot) }
 export function getGame() { return game }
+export function getActiveQuizTemplate() { return quizLibrary.find(item => item.id === activeQuizId) }
 export function getLiveRole() { return liveRole }
+export function leaveLiveRole(role?: 'host' | 'player' | 'screen') {
+  if (!liveRole || (role && liveRole !== role)) return
+  liveRole = null
+  const quiz = quizLibrary.find(item => item.id === activeQuizId)
+  if (quiz) game = gameFromQuiz(quiz)
+  notify()
+}
 export function receiveLiveGame(next: Game, role: 'host' | 'player' | 'screen') {
   const ownId = role === 'player' ? sessionStorage.getItem('quiz-demo-player-id') : null
   const ownResponses = ownId && liveRole === 'player' ? game.responses.filter(r => r.playerId === ownId && r.questionId === next.questions[next.questionIndex]?.id) : []
@@ -53,7 +103,86 @@ export function update(fn: (draft: Game) => void) {
   draft.stateVersion += 1
   save(draft)
 }
-export function resetGame() { if (liveRole) throw new Error('A live game cannot be reset as a local demo.'); save(freshGame()) }
+function gameFromQuiz(quiz: QuizTemplate): Game {
+  return { ...freshGame(), title: quiz.title, questions: structuredClone(quiz.questions), code: game.code }
+}
+export function createQuiz(title = 'Untitled Quiz') {
+  if (liveRole) throw new Error('Leave the live session before changing quizzes.')
+  const id = crypto.randomUUID()
+  const starter: Question = { id: crypto.randomUUID(), round: 'ROUND 1', type: 'single', prompt: 'New question', options: ['Answer A', 'Answer B', 'Answer C', 'Answer D'], answer: 'Answer A', points: 1000, duration: 30 }
+  const quiz: QuizTemplate = { id, title, questions: [starter], updatedAt: Date.now() }
+  quizLibrary = [...quizLibrary, quiz]
+  activeQuizId = id
+  localStorage.removeItem('quiz-live-host-code')
+  persistLibrary()
+  save(gameFromQuiz(quiz))
+  return id
+}
+export function duplicateQuiz(id: string) {
+  if (liveRole) throw new Error('Leave the live session before changing quizzes.')
+  const source = quizLibrary.find(item => item.id === id)
+  if (!source) throw new Error('Quiz not found.')
+  const quiz: QuizTemplate = {
+    id: crypto.randomUUID(),
+    title: `${source.title} copy`,
+    questions: structuredClone(source.questions).map(question => ({ ...question, id: crypto.randomUUID() })),
+    updatedAt: Date.now(),
+  }
+  quizLibrary = [...quizLibrary, quiz]
+  activeQuizId = quiz.id
+  localStorage.removeItem('quiz-live-host-code')
+  persistLibrary()
+  save(gameFromQuiz(quiz))
+  return quiz
+}
+export function importQuiz(title: string, questions: Question[]) {
+  if (liveRole) throw new Error('Leave the live session before importing a quiz.')
+  const quiz: QuizTemplate = {
+    id: crypto.randomUUID(),
+    title,
+    questions: structuredClone(questions).map(question => ({ ...question, id: crypto.randomUUID() })),
+    updatedAt: Date.now(),
+  }
+  quizLibrary = [...quizLibrary, quiz]
+  activeQuizId = quiz.id
+  localStorage.removeItem('quiz-live-host-code')
+  persistLibrary()
+  save(gameFromQuiz(quiz))
+  return quiz
+}
+export function deleteQuiz(id: string) {
+  if (liveRole) throw new Error('Leave the live session before changing quizzes.')
+  const target = quizLibrary.find(item => item.id === id)
+  if (!target) return
+  if (target.builtIn) throw new Error('The QuizForge test quiz is kept as a permanent example.')
+  quizLibrary = quizLibrary.filter(item => item.id !== id)
+  if (activeQuizId === id) activeQuizId = quizLibrary[0].id
+  localStorage.removeItem('quiz-live-host-code')
+  persistLibrary()
+  save(gameFromQuiz(quizLibrary.find(item => item.id === activeQuizId)!))
+}
+export function replaceQuizLibrary(quizzes: QuizTemplate[]) {
+  if (liveRole || !quizzes.length) return
+  quizLibrary = structuredClone(quizzes)
+  if (!quizLibrary.some(item => item.id === activeQuizId)) activeQuizId = quizLibrary[0].id
+  persistLibrary()
+  const active = quizLibrary.find(item => item.id === activeQuizId)
+  if (active) save(gameFromQuiz(active))
+}
+export function selectQuiz(id: string) {
+  if (liveRole) throw new Error('Leave the live session before changing quizzes.')
+  const quiz = quizLibrary.find(item => item.id === id)
+  if (!quiz) throw new Error('Quiz not found.')
+  activeQuizId = id
+  localStorage.removeItem('quiz-live-host-code')
+  persistLibrary()
+  save(gameFromQuiz(quiz))
+}
+export function resetGame() {
+  if (liveRole) throw new Error('A live game cannot be reset as a local demo.')
+  const quiz = quizLibrary.find(item => item.id === activeQuizId)
+  save(quiz ? gameFromQuiz(quiz) : freshGame())
+}
 export function jumpToQuestion(index: number) {
   if (!Number.isInteger(index) || index < 0 || index >= game.questions.length) return
   update(d => {

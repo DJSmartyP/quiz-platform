@@ -18,6 +18,8 @@ export function publicGame(source: Game): Game {
       items: showQuestion && question.id === active?.id ? question.items : undefined,
       categories: showQuestion && question.id === active?.id ? question.categories : undefined,
       scramble: showQuestion && question.id === active?.id ? question.scramble : undefined,
+      imageUrl: showQuestion && question.id === active?.id ? question.imageUrl : undefined,
+      imageAlt: showQuestion && question.id === active?.id ? question.imageAlt : undefined,
       answer: releasedAnswer && question.id === active?.id ? question.answer : undefined,
       explanation: releasedAnswer && question.id === active?.id ? question.explanation : undefined,
     })),

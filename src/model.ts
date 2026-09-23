@@ -1,4 +1,4 @@
-export type QuestionType = 'single' | 'multi' | 'boolean' | 'text' | 'free' | 'number' | 'closest' | 'ordering' | 'matching' | 'categorise' | 'list' | 'anagram'
+export type QuestionType = 'single' | 'multi' | 'boolean' | 'text' | 'free' | 'number' | 'closest' | 'ordering' | 'matching' | 'categorise' | 'list' | 'anagram' | 'photo-reveal' | 'photo-zoom'
 
 export type Question = {
   id: string
@@ -14,6 +14,8 @@ export type Question = {
   tolerance?: number
   explanation?: string
   scramble?: string
+  imageUrl?: string
+  imageAlt?: string
 }
 
 export type Player = { id: string; name: string; avatarId: string; score: number }
@@ -41,6 +43,7 @@ export const typeNames: Record<QuestionType, string> = {
   single: 'Single choice', multi: 'Multi-select', boolean: 'True or false', text: 'Text answer',
   free: 'Free response', number: 'Number', closest: 'Closest wins', ordering: 'Ordering',
   matching: 'Matching', categorise: 'Categorise', list: 'Multi-part list', anagram: 'Anagram',
+  'photo-reveal': 'Photo reveal', 'photo-zoom': 'Zoomed photo',
 }
 
 export const typeInstructions: Record<QuestionType, string> = {
@@ -56,6 +59,8 @@ export const typeInstructions: Record<QuestionType, string> = {
   categorise: 'Choose a category for each item on your phone.',
   list: 'Fill in each answer box on your phone, then submit.',
   anagram: 'Type the unjumbled word on your phone before time runs out.',
+  'photo-reveal': 'Watch the picture appear, then type what you think it is.',
+  'photo-zoom': 'Watch the picture zoom out, then type what you think it is.',
 }
 
 export function scrambleWord(answer: string): string {
@@ -141,7 +146,10 @@ export function isAnswerComplete(q: Question, answer: unknown): boolean {
     return Boolean(q.items?.length) && q.items!.every(item => typeof choices[item] === 'string' && Boolean((choices[item] as string).trim()))
   }
   if (q.type === 'ordering') return Boolean(q.items?.length) && Array.isArray(answer) && q.items!.every(item => answer.includes(item))
-  if (q.type === 'list') return Array.isArray(answer) && [0, 1, 2].every(index => typeof answer[index] === 'string' && Boolean(answer[index].trim()))
+  if (q.type === 'list') {
+    const expected = Array.isArray(q.answer) ? q.answer.length : 3
+    return expected > 0 && Array.isArray(answer) && Array.from({ length: expected }, (_, index) => index).every(index => typeof answer[index] === 'string' && Boolean(answer[index].trim()))
+  }
   if (q.type === 'multi') return Array.isArray(answer) && answer.length > 0
   return typeof answer === 'string' ? Boolean(answer.trim()) : answer !== undefined && answer !== null
 }
@@ -158,6 +166,11 @@ export function scoreAnswer(q: Question, value: unknown, elapsedSeconds = 0): nu
       return given === correct ? full : 0
     }
     case 'text': {
+      const accepted = Array.isArray(q.answer) ? q.answer : [q.answer]
+      return accepted.some(a => normalise(String(a)) === normalise(String(value))) ? full : 0
+    }
+    case 'photo-reveal':
+    case 'photo-zoom': {
       const accepted = Array.isArray(q.answer) ? q.answer : [q.answer]
       return accepted.some(a => normalise(String(a)) === normalise(String(value))) ? full : 0
     }

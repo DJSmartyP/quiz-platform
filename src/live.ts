@@ -1,11 +1,11 @@
 import { initializeApp } from 'firebase/app'
 import { browserLocalPersistence, getAuth, getRedirectResult, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup, signInWithRedirect } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, getFirestore, onSnapshot, query, runTransaction, serverTimestamp, where, type Unsubscribe } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, query, runTransaction, serverTimestamp, setDoc, where, type Unsubscribe } from 'firebase/firestore'
 import { advanceGame, breakGame, resumeGame } from './gameEngine'
 import { currentQuestion, isLastQuestionInRound, type Game, type Player, type Response } from './model'
 import { publicGame } from './publicGame'
 import { resultForAnswer, type OwnResult } from './reveal'
-import { getGame, receiveLiveGame, receiveOwnLiveResponse } from './store'
+import { getGame, receiveLiveGame, receiveOwnLiveResponse, type QuizTemplate } from './store'
 
 // Firebase web configuration is public; Firestore rules enforce access.
 const config = {
@@ -76,6 +76,44 @@ async function hostUid(allowPopup = true) {
   // browser session briefly using claims from an older authentication state.
   await user.getIdToken(true)
   return user.uid
+}
+
+export async function hasAdminSession() {
+  await setPersistence(hostAuth, browserLocalPersistence)
+  await hostAuth.authStateReady()
+  const user = hostAuth.currentUser
+  return Boolean(user && user.email?.toLowerCase() === 'nickpatel.trainer@gmail.com' && user.emailVerified && user.providerData.some(provider => provider.providerId === 'google.com'))
+}
+
+/**
+ * Merge the browser cache with the administrator's Firestore quiz library.
+ * The most recently edited copy wins, then every merged quiz is persisted.
+ */
+export async function syncQuizLibrary(localQuizzes: QuizTemplate[], allowPopup = true): Promise<QuizTemplate[]> {
+  await hostUid(allowPopup)
+  const snapshot = await getDocs(collection(hostDb, 'quizTemplates'))
+  const remote = snapshot.docs.map(item => item.data() as QuizTemplate)
+  const merged = new Map<string, QuizTemplate>()
+  for (const quiz of [...remote, ...localQuizzes]) {
+    const current = merged.get(quiz.id)
+    if (!current || quiz.updatedAt >= current.updatedAt) merged.set(quiz.id, serialise(quiz))
+  }
+  // The bundled test quiz is a permanent known-good test fixture. Its local
+  // canonical copy wins over any older accidental cloud edit.
+  for (const quiz of localQuizzes.filter(item => item.builtIn)) merged.set(quiz.id, serialise(quiz))
+  const quizzes = [...merged.values()].sort((a, b) => Number(Boolean(b.builtIn)) - Number(Boolean(a.builtIn)) || b.updatedAt - a.updatedAt)
+  await Promise.all(quizzes.map(quiz => setDoc(doc(hostDb, 'quizTemplates', quiz.id), serialise(quiz))))
+  return quizzes
+}
+
+export async function saveQuizTemplateCloud(quiz: QuizTemplate) {
+  await hostUid(false)
+  await setDoc(doc(hostDb, 'quizTemplates', quiz.id), serialise(quiz))
+}
+
+export async function deleteQuizTemplateCloud(id: string) {
+  await hostUid(false)
+  await deleteDoc(doc(hostDb, 'quizTemplates', id))
 }
 
 async function playerUid() {
