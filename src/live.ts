@@ -98,10 +98,10 @@ function timedGame(data: PublicDocument | PrivateDocument): Game {
   return { ...data.game, openedAt, closesAt: openedAt + duration * 1000 }
 }
 
-export async function startLiveHost(onStatus: (message: string, canControl: boolean) => void, allowPopup = true) {
+export async function startLiveHost(onStatus: (message: string, canControl: boolean) => void, allowPopup = true, fresh = false) {
   if (!getGame().questions.length) throw new Error('Add at least one question before starting a live game.')
   const uid = await hostUid(allowPopup)
-  const code = localStorage.getItem('quiz-live-host-code') || newGameCode()
+  const code = (fresh ? null : localStorage.getItem('quiz-live-host-code')) || newGameCode()
   const publicRef = doc(hostDb, 'liveGames', code)
   const privateRef = doc(hostDb, 'liveGames', code, 'private', 'engine')
   await runTransaction(hostDb, async tx => {

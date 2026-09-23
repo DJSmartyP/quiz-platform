@@ -12,7 +12,7 @@ The live game implementation uses the existing GitHub Pages site plus Firebase A
 ## Activate standard Firebase Authentication on Spark
 
 1. Open [Firebase Authentication](https://console.firebase.google.com/project/nickp-quiz-platform-2026/authentication/providers) for this project. Confirm the sidebar still says **Spark** and **No cost**.
-2. Open the local Host console in Chrome or Edge and press **Enable device sync**. Sign in as `nickpatel.trainer@gmail.com`. If the Google popup closes itself in the Codex in-app browser, use a normal browser; the full-page redirect fallback also failed to restore the account in that in-app browser during testing. Players never use this sign-in button: they join with a code, name and avatar and receive an anonymous Firebase identity automatically.
+2. Open the Host console in Chrome or Edge and press **Enable device sync**. Sign in as `nickpatel.trainer@gmail.com`. The login and Host controller identity persist in that browser. Use **New live game** when you deliberately want a fresh join code; ordinary refreshes reconnect the current game. If the Google popup closes itself in the Codex in-app browser, use a normal browser. Players never use this sign-in button: they open the fixed Player Portal at `#/join`, enter the current code, choose a name and avatar, and receive an anonymous Firebase identity automatically.
 3. Test with one Host, one `/screen/{code}` tab and at least two separate Player browser profiles/devices using `/join/{code}`. Check all phase changes, answer acknowledgement, reconnection, scoring, break/resume, secondary Host control and private-answer rules before publishing to `main`.
 
 ## Data model
