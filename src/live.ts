@@ -22,10 +22,10 @@ const playerDb = getFirestore(playerApp)
 const screenDb = getFirestore(screenApp)
 const hostAuth = getAuth(hostApp)
 const playerAuth = getAuth(playerApp)
-const priorControllerId = sessionStorage.getItem('quiz-host-controller-id')
-const isReload = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload'
-const controllerId = isReload && priorControllerId ? priorControllerId : crypto.randomUUID()
-sessionStorage.setItem('quiz-host-controller-id', controllerId)
+// One approved admin browser keeps the same controller identity across reloads
+// and normal navigation. State-version checks still reject stale double actions.
+const controllerId = localStorage.getItem('quiz-host-controller-id') || crypto.randomUUID()
+localStorage.setItem('quiz-host-controller-id', controllerId)
 
 type PublicDocument = { hostUid: string; controllerId: string; memberUids: string[]; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
 type PrivateDocument = { hostUid: string; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
@@ -72,6 +72,9 @@ async function hostUid(allowPopup = true) {
       !user.providerData.some(provider => provider.providerId === 'google.com')) {
     throw new Error('Only nickpatel.trainer@gmail.com can control QuizForge live games.')
   }
+  // Refresh the token before Firestore listeners attach. This avoids a restored
+  // browser session briefly using claims from an older authentication state.
+  await user.getIdToken(true)
   return user.uid
 }
 
@@ -105,6 +108,7 @@ export async function startLiveHost(onStatus: (message: string, canControl: bool
     const existing = await tx.get(publicRef)
     if (existing.exists()) {
       if (existing.data().hostUid !== uid) throw new Error('This code belongs to another Host.')
+      if (existing.data().controllerId !== controllerId) tx.update(publicRef, { controllerId })
       return
     }
     const initial: Game = serialise({ ...getGame(), code, phase: 'lobby', questionIndex: 0,

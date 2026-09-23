@@ -6,7 +6,7 @@ The live game implementation uses the existing GitHub Pages site plus Firebase A
 
 - Firestore is created and its rules compile and deploy.
 - The browser application builds and local state-engine tests pass.
-- Standard Firebase Authentication is active on Spark. **Anonymous** Player sign-in and **Google** Host sign-in are enabled through `firebase deploy --only auth`; a temporary anonymous sign-in succeeded and its test identity was deleted. Google uses `nickpatel.trainer@gmail.com` as the OAuth support email.
+- Standard Firebase Authentication is active on Spark. **Anonymous** Player sign-in and **Google** Host sign-in are enabled through `firebase deploy --only auth`; a temporary anonymous sign-in succeeded and its test identity was deleted. Google uses `nickpatel.trainer@gmail.com` as the OAuth support email. The approved admin login and controller identity persist in that browser, so refreshing or returning to the Host console reconnects control without another login.
 - The approved Authentication domains include `djsmartyp.github.io`, `localhost`, and `127.0.0.1`. Firestore rules permit Host actions only for a verified Google sign-in as `nickpatel.trainer@gmail.com`. A live Main Screen followed a Player joining a Firestore lobby without refresh; that Player also reconnected after refresh. A second independent anonymous Player joined the same lobby during a test and its test account was removed afterwards. Full Host-led question progression across two Player devices has not yet been verified. The GitHub Pages test build includes live mode for that acceptance test.
 
 ## Activate standard Firebase Authentication on Spark
