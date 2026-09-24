@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
-import { browserLocalPersistence, getAuth, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup, type Auth, type User } from 'firebase/auth'
-import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, query, runTransaction, serverTimestamp, setDoc, where, type Unsubscribe } from 'firebase/firestore'
+import { browserLocalPersistence, getAuth, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup, signOut, type Auth, type User } from 'firebase/auth'
+import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, type Unsubscribe } from 'firebase/firestore'
 import { advanceGame, breakGame, resumeGame } from './gameEngine'
 import { currentQuestion, isLastQuestionInRound, type Game, type Player, type Response } from './model'
 import { publicGame } from './publicGame'
@@ -35,27 +35,96 @@ type HostCommand = { type: 'advance' | 'break' | 'resume' | 'void' | 'grade'; pl
 let liveHostCode: string | null = null
 let playerConnection: { code: string; uid: string; stop: () => void } | null = null
 const codeAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const adminEmail = 'nickpatel.trainer@gmail.com'
+export type HostAccount = {
+  uid: string
+  displayName: string
+  email: string
+  organisationName: string
+  role: 'admin' | 'host'
+  status: 'active' | 'suspended'
+  createdAt?: unknown
+  updatedAt?: unknown
+  lastLoginAt?: unknown
+}
 function newGameCode() {
   const values = crypto.getRandomValues(new Uint8Array(6))
   return [...values].map(value => codeAlphabet[value % codeAlphabet.length]).join('')
 }
 
-function isApprovedAdmin(user: User | null) {
-  return Boolean(user && user.email?.toLowerCase() === 'nickpatel.trainer@gmail.com' && user.emailVerified &&
+function isGoogleUser(user: User | null) {
+  return Boolean(user && user.email && user.emailVerified &&
     user.providerData.some(provider => provider.providerId === 'google.com'))
 }
 
-function requireApprovedAdmin(user: User | null) {
+function isApprovedAdmin(user: User | null) {
+  return Boolean(isGoogleUser(user) && user?.email?.toLowerCase() === adminEmail)
+}
+
+function requireGoogleUser(user: User | null) {
   if (!user) throw new Error('Google sign-in did not complete. Try opening QuizForge in Chrome or Edge.')
-  if (!isApprovedAdmin(user)) throw new Error('Only nickpatel.trainer@gmail.com can control QuizForge live games.')
+  if (!isGoogleUser(user)) throw new Error('Use a verified Google account to sign in to XP Studio.')
   return user
 }
 
-export async function hasHostSession() {
+function hostCodeKey(uid: string) { return `quiz-live-host-code:${uid}` }
+
+function accountFrom(user: User, data: Partial<HostAccount>): HostAccount {
+  return {
+    uid: user.uid,
+    displayName: data.displayName || user.displayName || user.email?.split('@')[0] || 'Quiz Host',
+    email: user.email || '',
+    organisationName: data.organisationName || '',
+    role: data.role === 'admin' || isApprovedAdmin(user) ? 'admin' : 'host',
+    status: data.status === 'suspended' ? 'suspended' : 'active',
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt,
+    lastLoginAt: data.lastLoginAt,
+  }
+}
+
+async function ensureHostAccount(user: User, recordLogin = false): Promise<HostAccount> {
+  const ref = doc(hostDb, 'users', user.uid)
+  const snapshot = await getDoc(ref)
+  if (!snapshot.exists()) {
+    const account = accountFrom(user, {})
+    await setDoc(ref, { ...account, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), lastLoginAt: serverTimestamp() })
+    return account
+  }
+  const account = accountFrom(user, snapshot.data() as Partial<HostAccount>)
+  if (recordLogin) {
+    await updateDoc(ref, {
+      displayName: user.displayName || account.displayName,
+      lastLoginAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  }
+  return account
+}
+
+export async function restoreHostAccount(): Promise<HostAccount | null> {
   const auth = hostAuth()
   await setPersistence(auth, browserLocalPersistence)
   await auth.authStateReady()
-  return Boolean(isApprovedAdmin(auth.currentUser) && localStorage.getItem('quiz-live-host-code'))
+  if (!auth.currentUser) return null
+  const user = requireGoogleUser(auth.currentUser)
+  return ensureHostAccount(user)
+}
+
+export async function signOutHost() {
+  liveHostCode = null
+  await signOut(hostAuth())
+}
+
+export async function hasHostSession() {
+  const account = await restoreHostAccount()
+  if (!account || account.status !== 'active') return false
+  let code = localStorage.getItem(hostCodeKey(account.uid))
+  if (!code && account.role === 'admin') {
+    code = localStorage.getItem('quiz-live-host-code')
+    if (code) localStorage.setItem(hostCodeKey(account.uid), code)
+  }
+  return Boolean(code)
 }
 
 /**
@@ -66,28 +135,40 @@ export async function beginHostPopup() {
   const auth = hostAuth()
   const resultPromise = signInWithPopup(auth, new GoogleAuthProvider())
   const result = await resultPromise
-  const user = requireApprovedAdmin(result.user)
+  const user = requireGoogleUser(result.user)
   await setPersistence(auth, browserLocalPersistence)
   await user.getIdToken(true)
-  return user.uid
+  return ensureHostAccount(user, true)
 }
 
 async function hostUid(allowPopup = true) {
   const auth = hostAuth()
   await setPersistence(auth, browserLocalPersistence)
   await auth.authStateReady()
-  const user = requireApprovedAdmin(auth.currentUser || (allowPopup ? (await signInWithPopup(auth, new GoogleAuthProvider())).user : null))
+  const user = requireGoogleUser(auth.currentUser || (allowPopup ? (await signInWithPopup(auth, new GoogleAuthProvider())).user : null))
   // Refresh the token before Firestore listeners attach. This avoids a restored
   // browser session briefly using claims from an older authentication state.
   await user.getIdToken(true)
+  const account = await ensureHostAccount(user)
+  if (account.status !== 'active') throw new Error('This Host account is suspended. Contact the QuizForge administrator.')
   return user.uid
 }
 
 export async function hasAdminSession() {
-  const auth = hostAuth()
-  await setPersistence(auth, browserLocalPersistence)
-  await auth.authStateReady()
-  return isApprovedAdmin(auth.currentUser)
+  const account = await restoreHostAccount()
+  return account?.role === 'admin' && account.status === 'active'
+}
+
+export async function listHostAccounts(): Promise<HostAccount[]> {
+  if (!await hasAdminSession()) throw new Error('Administrator access is required.')
+  const snapshot = await getDocs(collection(hostDb, 'users'))
+  return snapshot.docs.map(item => ({ uid: item.id, ...item.data() } as HostAccount))
+    .sort((a, b) => a.role === b.role ? a.displayName.localeCompare(b.displayName) : a.role === 'admin' ? -1 : 1)
+}
+
+export async function setHostAccountStatus(uid: string, status: 'active' | 'suspended') {
+  if (!await hasAdminSession()) throw new Error('Administrator access is required.')
+  await updateDoc(doc(hostDb, 'users', uid), { status, updatedAt: serverTimestamp() })
 }
 
 /**
@@ -95,11 +176,16 @@ export async function hasAdminSession() {
  * The most recently edited copy wins, then every merged quiz is persisted.
  */
 export async function syncQuizLibrary(localQuizzes: QuizTemplate[], allowPopup = true): Promise<QuizTemplate[]> {
-  await hostUid(allowPopup)
-  const snapshot = await getDocs(collection(hostDb, 'quizTemplates'))
+  const uid = await hostUid(allowPopup)
+  const snapshot = await getDocs(collection(hostDb, 'users', uid, 'quizzes'))
   const remote = snapshot.docs.map(item => item.data() as QuizTemplate)
+  // The original single-account collection is retained as a read-only migration
+  // source for the administrator. It is never exposed to normal Hosts.
+  const legacy = isApprovedAdmin(hostAuth().currentUser)
+    ? (await getDocs(collection(hostDb, 'quizTemplates'))).docs.map(item => item.data() as QuizTemplate)
+    : []
   const merged = new Map<string, QuizTemplate>()
-  for (const quiz of [...remote, ...localQuizzes]) {
+  for (const quiz of [...legacy, ...remote, ...localQuizzes]) {
     const current = merged.get(quiz.id)
     if (!current || quiz.updatedAt >= current.updatedAt) merged.set(quiz.id, serialise(quiz))
   }
@@ -107,18 +193,18 @@ export async function syncQuizLibrary(localQuizzes: QuizTemplate[], allowPopup =
   // canonical copy wins over any older accidental cloud edit.
   for (const quiz of localQuizzes.filter(item => item.builtIn)) merged.set(quiz.id, serialise(quiz))
   const quizzes = [...merged.values()].sort((a, b) => Number(Boolean(b.builtIn)) - Number(Boolean(a.builtIn)) || b.updatedAt - a.updatedAt)
-  await Promise.all(quizzes.map(quiz => setDoc(doc(hostDb, 'quizTemplates', quiz.id), serialise(quiz))))
+  await Promise.all(quizzes.map(quiz => setDoc(doc(hostDb, 'users', uid, 'quizzes', quiz.id), { ...serialise(quiz), ownerUid: uid })))
   return quizzes
 }
 
 export async function saveQuizTemplateCloud(quiz: QuizTemplate) {
-  await hostUid(false)
-  await setDoc(doc(hostDb, 'quizTemplates', quiz.id), serialise(quiz))
+  const uid = await hostUid(false)
+  await setDoc(doc(hostDb, 'users', uid, 'quizzes', quiz.id), { ...serialise(quiz), ownerUid: uid })
 }
 
 export async function deleteQuizTemplateCloud(id: string) {
-  await hostUid(false)
-  await deleteDoc(doc(hostDb, 'quizTemplates', id))
+  const uid = await hostUid(false)
+  await deleteDoc(doc(hostDb, 'users', uid, 'quizzes', id))
 }
 
 async function playerUid() {
@@ -145,7 +231,7 @@ function timedGame(data: PublicDocument | PrivateDocument): Game {
 export async function startLiveHost(onStatus: (message: string, canControl: boolean) => void, allowPopup = true, fresh = false, claimControl = true) {
   if (!getGame().questions.length) throw new Error('Add at least one question before starting a live game.')
   const uid = await hostUid(allowPopup)
-  const code = (fresh ? null : localStorage.getItem('quiz-live-host-code')) || newGameCode()
+  const code = (fresh ? null : localStorage.getItem(hostCodeKey(uid))) || newGameCode()
   const publicRef = doc(hostDb, 'liveGames', code)
   const privateRef = doc(hostDb, 'liveGames', code, 'private', 'engine')
   await runTransaction(hostDb, async tx => {
@@ -164,7 +250,7 @@ export async function startLiveHost(onStatus: (message: string, canControl: bool
     tx.set(privateRef, { hostUid: uid, stateVersion: initial.stateVersion, game: initial })
   })
   liveHostCode = code
-  localStorage.setItem('quiz-live-host-code', code)
+  localStorage.setItem(hostCodeKey(uid), code)
   let privateGame: Game | null = null
   let roster: Player[] = []
   let responses: Response[] = []
@@ -215,7 +301,7 @@ export async function takeLiveControl() {
 /** Admin inspection is scoped to the Host's current session; rules protect private records. */
 export async function inspectAdminSession(): Promise<Game> {
   const uid = await hostUid(false)
-  const code = localStorage.getItem('quiz-live-host-code')
+  const code = localStorage.getItem(hostCodeKey(uid))
   if (!code) throw new Error('Start or reconnect a live game from the Host console first.')
   const [engine, players] = await Promise.all([
     getDoc(doc(hostDb, 'liveGames', code, 'private', 'engine')),

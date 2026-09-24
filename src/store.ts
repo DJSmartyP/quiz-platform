@@ -5,6 +5,8 @@ import { advanceGame, breakGame, resumeGame } from './gameEngine'
 const key = 'quiz-platform-demo-v1'
 const libraryKey = 'quiz-platform-library-v1'
 const activeQuizKey = 'quiz-platform-active-quiz-v1'
+let workspaceScope: string | null = null
+const scopedKey = (base: string) => workspaceScope ? `${base}:${workspaceScope}` : base
 let game: Game = (() => {
   try {
     const loaded = JSON.parse(localStorage.getItem(key) || '') as Game
@@ -36,13 +38,24 @@ localStorage.setItem(libraryKey, JSON.stringify(quizLibrary))
 localStorage.setItem(activeQuizKey, activeQuizId)
 const listeners = new Set<() => void>()
 let liveRole: 'host' | 'player' | 'screen' | null = null
-const channel = 'BroadcastChannel' in window ? new BroadcastChannel(key) : null
+let channel: BroadcastChannel | null = null
+
+function bindChannel() {
+  channel?.close()
+  channel = 'BroadcastChannel' in window ? new BroadcastChannel(scopedKey(key)) : null
+  channel?.addEventListener('message', event => { if (!liveRole) { game = event.data as Game; notify() } })
+}
+bindChannel()
 
 function notify() { listeners.forEach(listener => listener()) }
 function persistLibrary() {
   librarySnapshot = { quizzes: quizLibrary, activeQuizId }
-  localStorage.setItem(activeQuizKey, activeQuizId)
-  localStorage.setItem(libraryKey, JSON.stringify(quizLibrary))
+  localStorage.setItem(scopedKey(activeQuizKey), activeQuizId)
+  localStorage.setItem(scopedKey(libraryKey), JSON.stringify(quizLibrary))
+}
+function clearLiveCode() {
+  if (workspaceScope) localStorage.removeItem(`quiz-live-host-code:${workspaceScope}`)
+  else localStorage.removeItem('quiz-live-host-code')
 }
 function syncActiveQuiz(next: Game) {
   const index = quizLibrary.findIndex(quiz => quiz.id === activeQuizId)
@@ -53,21 +66,48 @@ function syncActiveQuiz(next: Game) {
   persistLibrary()
   // An edited quiz must start a new live session. Reusing the previous code
   // would reconnect the Host to the old Firestore copy instead of these edits.
-  localStorage.removeItem('quiz-live-host-code')
+  clearLiveCode()
 }
 function save(next: Game) {
   game = next
   syncActiveQuiz(next)
-  localStorage.setItem(key, JSON.stringify(next))
+  localStorage.setItem(scopedKey(key), JSON.stringify(next))
   channel?.postMessage(next)
   notify()
 }
-channel?.addEventListener('message', event => { if (!liveRole) { game = event.data as Game; notify() } })
-window.addEventListener('storage', event => { if (!liveRole && event.key === key && event.newValue) { game = JSON.parse(event.newValue) as Game; notify() } })
+window.addEventListener('storage', event => { if (!liveRole && event.key === scopedKey(key) && event.newValue) { game = JSON.parse(event.newValue) as Game; notify() } })
 window.addEventListener('storage', event => {
-  if (event.key !== libraryKey || !event.newValue) return
-  try { quizLibrary = JSON.parse(event.newValue) as QuizTemplate[]; activeQuizId = localStorage.getItem(activeQuizKey) || quizLibrary[0]?.id; librarySnapshot = { quizzes: quizLibrary, activeQuizId }; notify() } catch { /* Ignore incomplete cross-tab writes. */ }
+  if (event.key !== scopedKey(libraryKey) || !event.newValue) return
+  try { quizLibrary = JSON.parse(event.newValue) as QuizTemplate[]; activeQuizId = localStorage.getItem(scopedKey(activeQuizKey)) || quizLibrary[0]?.id; librarySnapshot = { quizzes: quizLibrary, activeQuizId }; notify() } catch { /* Ignore incomplete cross-tab writes. */ }
 })
+
+/** Switch the browser workspace to the signed-in Host before protected routes render. */
+export function scopeQuizWorkspace(uid: string, migrateLegacy = false) {
+  if (workspaceScope === uid) return
+  const previousLibrary = structuredClone(quizLibrary)
+  const previousGame = structuredClone(game)
+  workspaceScope = uid
+  let scopedLibrary: QuizTemplate[] = []
+  try {
+    const raw = localStorage.getItem(scopedKey(libraryKey))
+    if (raw) scopedLibrary = JSON.parse(raw) as QuizTemplate[]
+  } catch { /* A damaged local cache is replaced by the starter pack. */ }
+  if (!scopedLibrary.length && migrateLegacy) scopedLibrary = previousLibrary
+  const storedStarter = scopedLibrary.find(item => item.id === testTemplate.id)
+  const starter = { ...testTemplate, theme: storedStarter?.theme || testTemplate.theme, updatedAt: storedStarter?.updatedAt || testTemplate.updatedAt }
+  quizLibrary = [starter, ...scopedLibrary.filter(item => item.id !== starter.id).map(item => ({ ...item, theme: item.theme || 'quiz-show' }))]
+  activeQuizId = localStorage.getItem(scopedKey(activeQuizKey)) || (migrateLegacy ? activeQuizId : starter.id)
+  if (!quizLibrary.some(item => item.id === activeQuizId)) activeQuizId = starter.id
+  try {
+    const storedGame = localStorage.getItem(scopedKey(key))
+    game = storedGame ? JSON.parse(storedGame) as Game : migrateLegacy && activeQuizId !== starter.id ? previousGame : gameFromQuiz(quizLibrary.find(item => item.id === activeQuizId) || starter)
+  } catch { game = gameFromQuiz(quizLibrary.find(item => item.id === activeQuizId) || starter) }
+  liveRole = null
+  bindChannel()
+  persistLibrary()
+  localStorage.setItem(scopedKey(key), JSON.stringify(game))
+  notify()
+}
 
 export function useGame() { return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb) }, () => game) }
 export function useQuizLibrary() { return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb) }, () => librarySnapshot) }
@@ -114,7 +154,7 @@ export function createQuiz(title = 'Untitled Quiz') {
   const quiz: QuizTemplate = { id, title, theme: 'quiz-show', questions: [starter], updatedAt: Date.now() }
   quizLibrary = [...quizLibrary, quiz]
   activeQuizId = id
-  localStorage.removeItem('quiz-live-host-code')
+  clearLiveCode()
   persistLibrary()
   save(gameFromQuiz(quiz))
   return id
@@ -132,7 +172,7 @@ export function duplicateQuiz(id: string) {
   }
   quizLibrary = [...quizLibrary, quiz]
   activeQuizId = quiz.id
-  localStorage.removeItem('quiz-live-host-code')
+  clearLiveCode()
   persistLibrary()
   save(gameFromQuiz(quiz))
   return quiz
@@ -148,7 +188,7 @@ export function importQuiz(title: string, questions: Question[], theme: QuizThem
   }
   quizLibrary = [...quizLibrary, quiz]
   activeQuizId = quiz.id
-  localStorage.removeItem('quiz-live-host-code')
+  clearLiveCode()
   persistLibrary()
   save(gameFromQuiz(quiz))
   return quiz
@@ -160,7 +200,7 @@ export function deleteQuiz(id: string) {
   if (target.builtIn) throw new Error('The QuizForge test quiz is kept as a permanent example.')
   quizLibrary = quizLibrary.filter(item => item.id !== id)
   if (activeQuizId === id) activeQuizId = quizLibrary[0].id
-  localStorage.removeItem('quiz-live-host-code')
+  clearLiveCode()
   persistLibrary()
   save(gameFromQuiz(quizLibrary.find(item => item.id === activeQuizId)!))
 }
@@ -177,7 +217,7 @@ export function selectQuiz(id: string) {
   const quiz = quizLibrary.find(item => item.id === id)
   if (!quiz) throw new Error('Quiz not found.')
   activeQuizId = id
-  localStorage.removeItem('quiz-live-host-code')
+  clearLiveCode()
   persistLibrary()
   save(gameFromQuiz(quiz))
 }

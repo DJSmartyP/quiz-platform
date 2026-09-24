@@ -2,34 +2,74 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function approvedHost() {
-      return signedIn() &&
-        request.auth.token.email == 'nickpatel.trainer@gmail.com' &&
-        request.auth.token.email_verified == true;
+    function isGoogleUser() {
+      return signedIn() && request.auth.token.email is string &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+    function isAdmin() {
+      return isGoogleUser() && request.auth.token.email == 'nickpatel.trainer@gmail.com';
+    }
+    function activeHost(uid) {
+      return isGoogleUser() && request.auth.uid == uid &&
+        exists(/databases/$(database)/documents/users/$(uid)) &&
+        get(/databases/$(database)/documents/users/$(uid)).data.status == 'active';
     }
     function session(code) {
       return get(/databases/$(database)/documents/liveGames/$(code));
     }
     function isHost(code) {
-      return approvedHost() && session(code).data.hostUid == request.auth.uid;
+      return activeHost(request.auth.uid) && session(code).data.hostUid == request.auth.uid;
+    }
+
+    match /users/{uid} {
+      allow get: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow list: if isAdmin();
+      allow create: if isGoogleUser() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'displayName', 'email', 'organisationName', 'role', 'status',
+          'createdAt', 'updatedAt', 'lastLoginAt'
+        ]) && request.resource.data.uid == uid &&
+        request.resource.data.email == request.auth.token.email &&
+        request.resource.data.status == 'active' &&
+        request.resource.data.role == (isAdmin() ? 'admin' : 'host');
+      allow update: if (
+        isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']) &&
+        request.resource.data.status in ['active', 'suspended']
+      ) || (
+        isGoogleUser() && request.auth.uid == uid &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.email == resource.data.email &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'organisationName', 'updatedAt', 'lastLoginAt'])
+      );
+      allow delete: if false;
+
+      match /quizzes/{quizId} {
+        allow get, list: if activeHost(uid);
+        allow create: if activeHost(uid) && request.resource.data.ownerUid == uid;
+        allow update: if activeHost(uid) && resource.data.ownerUid == uid && request.resource.data.ownerUid == uid;
+        allow delete: if activeHost(uid) && resource.data.ownerUid == uid;
+      }
     }
 
     match /quizTemplates/{quizId} {
-      // Quiz authoring is available only to the single approved administrator.
-      allow read, create, update, delete: if approvedHost();
+      // Legacy single-owner library: retained only as an admin migration source.
+      allow read, create, update, delete: if isAdmin();
     }
 
     match /liveGames/{code} {
-      allow get: if true; // Knowing the join code permits the public presentation state.
+      allow get: if true;
       allow list, delete: if false;
-      allow create: if approvedHost() &&
+      allow create: if activeHost(request.auth.uid) &&
         request.resource.data.keys().hasOnly(['hostUid', 'controllerId', 'memberUids', 'stateVersion', 'game']) &&
-        request.resource.data.hostUid == request.auth.uid &&
-        request.resource.data.memberUids == [] &&
+        request.resource.data.hostUid == request.auth.uid && request.resource.data.memberUids == [] &&
         request.resource.data.stateVersion is int;
       allow update: if (
-        isHost(code) &&
-        request.resource.data.hostUid == resource.data.hostUid &&
+        isHost(code) && request.resource.data.hostUid == resource.data.hostUid &&
         request.resource.data.memberUids == resource.data.memberUids &&
         (
           (request.resource.data.stateVersion == resource.data.stateVersion + 1 &&
@@ -38,8 +78,7 @@ service cloud.firestore {
            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['controllerId']))
         )
       ) || (
-        signedIn() &&
-        resource.data.memberUids.size() < 50 &&
+        signedIn() && resource.data.memberUids.size() < 50 &&
         !resource.data.memberUids.hasAny([request.auth.uid]) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids']) &&
         request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1 &&
@@ -50,7 +89,7 @@ service cloud.firestore {
 
       match /private/{documentId} {
         allow get, list: if isHost(code);
-        allow create: if approvedHost() && documentId == 'engine' &&
+        allow create: if activeHost(request.auth.uid) && documentId == 'engine' &&
           getAfter(/databases/$(database)/documents/liveGames/$(code)).data.hostUid == request.auth.uid &&
           request.resource.data.hostUid == request.auth.uid;
         allow update: if isHost(code) && documentId == 'engine' &&
@@ -61,13 +100,11 @@ service cloud.firestore {
 
       match /players/{uid} {
         allow get: if isHost(code) || (signedIn() && request.auth.uid == uid);
-        // Player names and avatars are public within a game; answers stay private.
         allow list: if exists(/databases/$(database)/documents/liveGames/$(code));
         allow create: if signedIn() && request.auth.uid == uid &&
           request.resource.data.keys().hasOnly(['name', 'avatarId']) &&
-          request.resource.data.name is string &&
-          request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 24 &&
-          request.resource.data.avatarId is string &&
+          request.resource.data.name is string && request.resource.data.name.size() > 0 &&
+          request.resource.data.name.size() <= 24 && request.resource.data.avatarId is string &&
           getAfter(/databases/$(database)/documents/liveGames/$(code)).data.memberUids.hasAny([uid]);
         allow update, delete: if false;
       }
@@ -75,8 +112,7 @@ service cloud.firestore {
       match /responses/{responseId} {
         function validSubmission() {
           let live = session(code).data;
-          return signedIn() && live.memberUids.hasAny([request.auth.uid]) &&
-            live.game.phase == 'open' &&
+          return signedIn() && live.memberUids.hasAny([request.auth.uid]) && live.game.phase == 'open' &&
             request.resource.data.keys().hasOnly(['playerId', 'questionId', 'value', 'submittedAt']) &&
             request.resource.data.playerId == request.auth.uid &&
             request.resource.data.questionId == live.game.questions[live.game.questionIndex].id &&
@@ -86,18 +122,14 @@ service cloud.firestore {
             request.resource.data.submittedAt <= request.time.toMillis() + 5000 &&
             request.time < live.openedAtServer + duration.value(live.game.questions[live.game.questionIndex].duration, 's');
         }
-        // The deterministic ID also permits reading an as-yet-missing own answer.
-        allow get: if isHost(code) ||
-          (signedIn() && responseId.matches('^' + request.auth.uid + '_[^/]+$'));
+        allow get: if isHost(code) || (signedIn() && responseId.matches('^' + request.auth.uid + '_[^/]+$'));
         allow list: if isHost(code);
         allow create: if validSubmission();
-        allow update: if false; // One authoritative answer per Player and question.
-        allow delete: if false;
+        allow update, delete: if false;
       }
 
       match /results/{resultId} {
-        allow get: if isHost(code) ||
-          (signedIn() && resultId.matches('^' + request.auth.uid + '_[^/]+$'));
+        allow get: if isHost(code) || (signedIn() && resultId.matches('^' + request.auth.uid + '_[^/]+$'));
         allow list: if isHost(code);
         allow create, update: if isHost(code);
         allow delete: if false;

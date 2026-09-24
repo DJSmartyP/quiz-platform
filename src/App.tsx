@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { HashRouter, Link, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import { ArrowRight, Check, CircleHelp, Clock3, Copy, Download, Edit3, ExternalLink, Gamepad2, ImagePlus, LayoutDashboard, MonitorPlay, Play, Plus, ShieldCheck, Sparkles, Trash2, Trophy, Upload, Users } from 'lucide-react'
 import { anagramDisplay, currentQuestion, gradeFor, isAnswerComplete, quizThemes, ranked, rankedRound, responseFor, roundPoints, scrambleWord, typeInstructions, typeNames, type Game, type Player, type Question, type QuestionType, type QuizTheme } from './model'
-import { actionLabel, createQuiz, deleteQuiz, duplicateQuiz, expireAnswers, getActiveQuizTemplate, getLiveRole, importQuiz, leaveLiveRole, replaceQuizLibrary, selectQuiz, setQuizTheme, update, useGame, useQuizLibrary, type QuizTemplate } from './store'
-import { beginHostPopup, deleteQuizTemplateCloud, followLiveScreen, hasAdminSession, hasHostSession, joinLiveGame, liveHostCommand, reconnectLivePlayer, saveQuizTemplateCloud, startLiveHost, submitLiveAnswer, syncQuizLibrary, takeLiveControl } from './live'
+import { actionLabel, createQuiz, deleteQuiz, duplicateQuiz, expireAnswers, getActiveQuizTemplate, getLiveRole, importQuiz, leaveLiveRole, replaceQuizLibrary, scopeQuizWorkspace, selectQuiz, setQuizTheme, update, useGame, useQuizLibrary, type QuizTemplate } from './store'
+import { beginHostPopup, deleteQuizTemplateCloud, followLiveScreen, hasHostSession, joinLiveGame, liveHostCommand, reconnectLivePlayer, restoreHostAccount, saveQuizTemplateCloud, signOutHost, startLiveHost, submitLiveAnswer, syncQuizLibrary, takeLiveControl, type HostAccount } from './live'
 import { answerLabel, type OwnResult } from './reveal'
 import QRCode from 'qrcode'
 import AdminDashboard from './AdminDashboard'
@@ -140,8 +140,35 @@ function readQuizPack(text: string): { title: string; theme: QuizTheme; question
   const theme = quizThemeIds.includes(source.theme as QuizTheme) ? source.theme as QuizTheme : 'quiz-show'
   return { title: source.title.trim(), theme, questions }
 }
+const HostAccountContext = createContext<HostAccount | null>(null)
+function HostGate({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
+  const [account, setAccount] = useState<HostAccount | null | undefined>(undefined)
+  const [error, setError] = useState('')
+  const prepare = (next: HostAccount | null) => {
+    if (next) scopeQuizWorkspace(next.uid, next.role === 'admin')
+    setAccount(next)
+  }
+  useEffect(() => {
+    let active = true
+    void restoreHostAccount().then(next => { if (active) prepare(next) }).catch(cause => { if (active) { setError((cause as Error).message); setAccount(null) } })
+    return () => { active = false }
+  }, [])
+  const signIn = async () => {
+    setError('')
+    try { prepare(await beginHostPopup()) }
+    catch (cause) { setError(friendlyAuthError(cause)) }
+  }
+  if (account === undefined) return <div className="account-gate"><Logo/><div className="account-card"><span className="account-kicker">XP STUDIO</span><h1>Opening your Host workspace…</h1><p>Checking your saved Google sign-in.</p></div></div>
+  if (!account) return <div className="account-gate"><Logo/><div className="account-card"><span className="account-kicker">XP STUDIO HOST ACCESS</span><h1>Build and run your quizzes.</h1><p>Sign in with Google to open your private QuizForge workspace. Players never need an account.</p>{error&&<div className="error">{error}</div>}<Button onClick={()=>void signIn()}><ShieldCheck size={18}/> Sign in with Google</Button><Link className="text-link" to="/">Back to QuizForge</Link></div></div>
+  if (account.status === 'suspended') return <div className="account-gate"><Logo/><div className="account-card"><span className="account-kicker">ACCOUNT PAUSED</span><h1>Your Host access is suspended.</h1><p>Contact nickpatel.trainer@gmail.com if you think this is a mistake.</p><Button variant="secondary" onClick={()=>void signOutHost().then(()=>setAccount(null))}>Sign out</Button></div></div>
+  if (adminOnly && account.role !== 'admin') return <div className="account-gate"><Logo/><div className="account-card"><span className="account-kicker">ADMIN ONLY</span><h1>This area is restricted.</h1><p>Your Host account can manage its own quizzes and live games.</p><Link className="btn primary" to="/organiser">Return to workspace</Link></div></div>
+  return <HostAccountContext.Provider value={account}>{children}</HostAccountContext.Provider>
+}
 function Shell({ children, active }: { children: React.ReactNode; active?: string }) {
-  return <div className="shell"><aside className="sidebar"><Logo/><div className="side-label">WORKSPACE</div><NavLink to="/organiser" className={({isActive}) => `side-link ${isActive ? 'active' : ''}`}><LayoutDashboard size={19}/> Overview</NavLink><NavLink to="/editor" className={({isActive}) => `side-link ${isActive ? 'active' : ''}`}><Edit3 size={19}/> Quiz editor</NavLink><NavLink to="/host" className={({isActive}) => `side-link ${isActive ? 'active' : ''}`}><Gamepad2 size={19}/> Host console</NavLink><NavLink to="/screen" className={({isActive}) => `side-link ${isActive ? 'active' : ''}`}><MonitorPlay size={19}/> Screen launcher</NavLink><div className="side-label spaced">PLATFORM</div><NavLink to="/admin" className={({isActive}) => `side-link ${isActive ? 'active' : ''}`}><ShieldCheck size={19}/> Admin preview</NavLink><div className="side-bottom"><span className="demo-dot"/> Browser workspace <small>Live sessions sync through Firebase</small></div></aside><div className="shell-main"><div className="workspace-foundry-art" aria-hidden="true"><img src={asset('home/quizforge-foundry.webp')} alt=""/></div><header className="topbar"><div className="breadcrumbs">Workspace <span>/</span> {active || 'Overview'}</div><div className="top-actions"><span className="preview-chip"><span/> BUILD MODE</span><Link className="text-link" to="/join">PixelPlay Portal <ExternalLink size={15}/></Link></div></header>{children}</div></div>
+  const account = useContext(HostAccountContext)
+  const nav = useNavigate()
+  const logOut = async () => { await signOutHost(); nav('/'); location.reload() }
+  return <div className="shell"><aside className="sidebar"><Logo/><div className="side-label">WORKSPACE</div><NavLink to="/organiser" className={({isActive}) => `side-link ${isActive ? 'active' : ''}`}><LayoutDashboard size={19}/> Overview</NavLink><NavLink to="/editor" className={({isActive}) => `side-link ${isActive ? 'active' : ''}`}><Edit3 size={19}/> Quiz editor</NavLink><NavLink to="/host" className={({isActive}) => `side-link ${isActive ? 'active' : ''}`}><Gamepad2 size={19}/> Host console</NavLink><NavLink to="/screen" className={({isActive}) => `side-link ${isActive ? 'active' : ''}`}><MonitorPlay size={19}/> Screen launcher</NavLink>{account?.role==='admin'&&<><div className="side-label spaced">PLATFORM</div><NavLink to="/admin" className={({isActive}) => `side-link ${isActive ? 'active' : ''}`}><ShieldCheck size={19}/> Host accounts</NavLink></>}<div className="side-bottom"><span className="demo-dot"/> {account?.displayName || 'Host workspace'}<small>{account?.email}</small><button className="signout-link" onClick={()=>void logOut()}>Sign out</button></div></aside><div className="shell-main"><div className="workspace-foundry-art" aria-hidden="true"><img src={asset('home/quizforge-foundry.webp')} alt=""/></div><header className="topbar"><div className="breadcrumbs">XP Studio <span>/</span> {active || 'Overview'}</div><div className="top-actions"><span className="preview-chip"><span/> CLOUD WORKSPACE</span><Link className="text-link" to="/join">PixelPlay Portal <ExternalLink size={15}/></Link></div></header>{children}</div></div>
 }
 function Button({ children, onClick, variant = 'primary', disabled = false }: { children: React.ReactNode; onClick?: () => void; variant?: 'primary'|'secondary'|'danger'|'ghost'; disabled?: boolean }) { return <button className={`btn ${variant}`} onClick={onClick} disabled={disabled}>{children}</button> }
 function Badge({ children, tone = 'purple' }: {children: React.ReactNode; tone?: 'purple'|'green'|'amber'|'gray'}) { return <span className={`badge ${tone}`}>{children}</span> }
@@ -307,56 +334,43 @@ function Home() {
 }
 function Organiser() {
   const game = useGame(), library = useQuizLibrary(), packs = usePacks(), nav = useNavigate()
-  const [cloudStatus, setCloudStatus] = useState('Checking administrator sign-in…')
+  const [cloudStatus, setCloudStatus] = useState('Loading your cloud quiz library…')
   const [cloudBusy, setCloudBusy] = useState(false)
   const importInput = useRef<HTMLInputElement>(null)
-  const connectCloud = async (allowPopup: boolean) => {
+  const connectCloud = async () => {
     setCloudBusy(true)
-    setCloudStatus(allowPopup ? 'Signing in…' : 'Loading cloud quiz library…')
+    setCloudStatus('Loading your cloud quiz library…')
     try {
-      const quizzes = await syncQuizLibrary(library.quizzes, allowPopup)
+      const quizzes = await syncQuizLibrary(library.quizzes, false)
       replaceQuizLibrary(quizzes)
       setCloudStatus('Cloud library synced')
     } catch (error) {
-      setCloudStatus(allowPopup ? `Cloud sync failed: ${(error as Error).message}` : 'Sign in once to save quizzes to your administrator account')
+      setCloudStatus(`Cloud sync failed: ${(error as Error).message}`)
     } finally { setCloudBusy(false) }
   }
   useEffect(() => {
     let active = true
-    const restore = async () => {
-      const signedIn = await hasAdminSession()
-      if (!active) return
-      if (signedIn) void connectCloud(false)
-      else setCloudStatus('Sign in once to save quizzes to your administrator account')
-    }
-    void restore().catch(() => { if (active) setCloudStatus('Sign in once to save quizzes to your administrator account') })
+    void connectCloud().catch(() => { if (active) setCloudStatus('Cloud library could not be loaded') })
     return () => { active = false }
   // The initial browser cache is intentionally captured once, then Firestore is authoritative.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const signInWorkspace = async () => {
-    setCloudBusy(true)
-    setCloudStatus('Opening secure Google sign-in…')
-    try { await beginHostPopup(); await connectCloud(false) }
-    catch (error) { setCloudStatus(`Sign-in failed: ${friendlyAuthError(error)}`) }
-    finally { setCloudBusy(false) }
-  }
   const makeQuiz = () => { createQuiz(); nav('/editor') }
   const openQuiz = (id: string, destination: '/editor' | '/host') => { if (id !== library.activeQuizId) selectQuiz(id); nav(destination) }
   const copyQuiz = async (id: string) => {
     const quiz = duplicateQuiz(id)
-    try { if (await hasAdminSession()) await saveQuizTemplateCloud(quiz) } catch (error) { setCloudStatus(`Copy saved in browser; cloud sync failed: ${(error as Error).message}`) }
+    try { await saveQuizTemplateCloud(quiz) } catch (error) { setCloudStatus(`Copy saved in browser; cloud sync failed: ${(error as Error).message}`) }
     nav('/editor')
   }
   const removeQuiz = async (id: string) => {
     if (!confirm('Delete this quiz? This cannot be undone.')) return
     deleteQuiz(id)
-    try { if (await hasAdminSession()) await deleteQuizTemplateCloud(id) } catch (error) { setCloudStatus(`Deleted in browser; cloud delete failed: ${(error as Error).message}`) }
+    try { await deleteQuizTemplateCloud(id) } catch (error) { setCloudStatus(`Deleted in browser; cloud delete failed: ${(error as Error).message}`) }
   }
   const chooseTheme = async (id: string, theme: QuizTheme) => {
     try {
       const quiz = setQuizTheme(id, theme)
-      if (await hasAdminSession()) await saveQuizTemplateCloud(quiz)
+      await saveQuizTemplateCloud(quiz)
       setCloudStatus(`Theme set to ${quizThemes[theme].name}`)
     } catch (error) { setCloudStatus(`Theme change failed: ${(error as Error).message}`) }
   }
@@ -375,23 +389,21 @@ function Organiser() {
     try {
       const pack = readQuizPack(await file.text())
       const quiz = importQuiz(pack.title, pack.questions, pack.theme)
-      const signedIn = await hasAdminSession()
-      if (signedIn) {
-        try { await saveQuizTemplateCloud(quiz); setCloudStatus(`Imported “${quiz.title}” and saved it to the cloud library`) }
-        catch (error) { setCloudStatus(`Imported “${quiz.title}” in this browser; cloud sync failed: ${(error as Error).message}`) }
-      } else setCloudStatus(`Imported “${quiz.title}” into this browser`)
+      try { await saveQuizTemplateCloud(quiz); setCloudStatus(`Imported “${quiz.title}” and saved it to your cloud library`) }
+      catch (error) { setCloudStatus(`Imported “${quiz.title}” in this browser; cloud sync failed: ${(error as Error).message}`) }
       nav('/editor')
     } catch (error) { setCloudStatus(`Import failed: ${(error as Error).message}`) }
     finally { setCloudBusy(false); if (importInput.current) importInput.current.value = '' }
   }
   return <Shell active="Overview"><main className="page">
-    <div className="page-heading"><div><div className="eyebrow dark">ORGANISER WORKSPACE</div><h1>Good evening, quizmaster.</h1><p>Keep the QuizForge test quiz and build as many of your own quizzes as you need.</p><span className={`cloud-status ${cloudStatus==='Cloud library synced'?'ready':''}`}><ShieldCheck size={14}/>{cloudStatus}</span></div><div className="host-head-actions">{cloudStatus!=='Cloud library synced'&&<Button variant="secondary" onClick={()=>void signInWorkspace()} disabled={cloudBusy}>{cloudBusy?'Connecting…':'Admin sign in'}</Button>}<input ref={importInput} hidden type="file" accept=".json,.quizforge.json,application/json" onChange={event=>void importQuizPack(event.target.files?.[0])}/><Button variant="secondary" onClick={()=>importInput.current?.click()} disabled={cloudBusy}><Upload size={17}/> Import quiz pack</Button><Button onClick={makeQuiz}><Plus size={18}/> Create new quiz</Button></div></div>
-    <div className="stats-grid"><div className="stat"><span>QUIZZES</span><strong>{library.quizzes.length}</strong><small>Saved in this browser</small></div><div className="stat"><span>ACTIVE QUIZ</span><strong>{game.phase === 'lobby' ? 'Ready' : 'Live'}</strong><small>{game.title}</small></div><div className="stat"><span>PLAYERS</span><strong>{game.players.length}</strong><small>In this session</small></div></div>
-    <div className="section-title"><h2>Your quizzes</h2><span>{library.quizzes.length} {library.quizzes.length === 1 ? 'quiz' : 'quizzes'}</span></div>
+    <div className="page-heading"><div><div className="eyebrow dark">ORGANISER WORKSPACE</div><h1>Good evening, quizmaster.</h1><p>Start from scratch, or use the protected QuizForge test pack for a connection check.</p><span className={`cloud-status ${cloudStatus==='Cloud library synced'?'ready':''}`}><ShieldCheck size={14}/>{cloudStatus}</span></div><div className="host-head-actions"><input ref={importInput} hidden type="file" accept=".json,.quizforge.json,application/json" onChange={event=>void importQuizPack(event.target.files?.[0])}/><Button variant="secondary" onClick={()=>importInput.current?.click()} disabled={cloudBusy}><Upload size={17}/> Import quiz pack</Button><Button onClick={makeQuiz}><Plus size={18}/> Start new quiz</Button></div></div>
+    <div className="stats-grid"><div className="stat"><span>QUIZZES</span><strong>{library.quizzes.length}</strong><small>Private cloud library</small></div><div className="stat"><span>ACTIVE QUIZ</span><strong>{game.phase === 'lobby' ? 'Ready' : 'Live'}</strong><small>{game.title}</small></div><div className="stat"><span>PLAYERS</span><strong>{game.players.length}</strong><small>In this session</small></div></div>
+    <div className="section-title"><h2>Quiz library</h2><span>{library.quizzes.length} {library.quizzes.length === 1 ? 'quiz' : 'quizzes'}</span></div>
     <div className="quiz-library">{library.quizzes.map(quiz => {
       const rounds = new Set(quiz.questions.map(question => question.round)).size
       const selected = quiz.id === library.activeQuizId
-      return <div className={`quiz-card ${selected ? 'selected-quiz' : ''}`} key={quiz.id}><div className="quiz-cover" style={{backgroundImage:`linear-gradient(#080b1370,#080b1370),url(${asset(`themes/${quiz.theme || 'quiz-show'}/background.webp`)})`}}><img className="quiz-cover-frame" src={asset(`themes/${quiz.theme || 'quiz-show'}/frame.webp`)} alt=""/></div><div className="quiz-details"><div className="quiz-badges"><Badge tone={selected?'green':'gray'}>{selected?'SELECTED':'READY'}</Badge><Badge>{quizThemes[quiz.theme || 'quiz-show'].name}</Badge>{quiz.builtIn&&<Badge tone="amber">TEST QUIZ</Badge>}</div><h3>{quiz.title}</h3><p>{rounds} {rounds === 1 ? 'round' : 'rounds'} · {quiz.questions.length} {quiz.questions.length === 1 ? 'question' : 'questions'}</p><label className="quiz-theme-quick"><span>VISUAL THEME</span><select value={quiz.theme || 'quiz-show'} onChange={event=>void chooseTheme(quiz.id,event.target.value as QuizTheme)} disabled={cloudBusy}>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small>Styles PixelPlay and the Main Screen.</small></label><div className="quiz-card-actions"><Button onClick={() => openQuiz(quiz.id,'/host')}><Play size={17}/> Host this quiz</Button>{!quiz.builtIn&&<Button variant="secondary" onClick={() => openQuiz(quiz.id,'/editor')}><Edit3 size={16}/> Edit quiz</Button>}<Button variant="ghost" onClick={()=>exportQuiz(quiz)}><Download size={15}/> Export</Button><Button variant="ghost" onClick={()=>void copyQuiz(quiz.id)}><Copy size={15}/>{quiz.builtIn?'Copy to edit':'Duplicate'}</Button>{!quiz.builtIn&&<Button variant="danger" onClick={()=>void removeQuiz(quiz.id)}><Trash2 size={15}/> Delete</Button>}</div></div></div>
+      const theme = quiz.theme || 'quiz-show'
+      return <div className={`quiz-card ${selected ? 'selected-quiz' : ''}`} key={quiz.id}><div className={`quiz-cover theme-${theme}`} style={{...themeSurfaceStyle(theme),backgroundImage:`linear-gradient(#080b1370,#080b1370),url(${asset(`themes/${theme}/background.webp`)})`}}><small>{quiz.builtIn?'STARTER QUIZ PACK':'THEME PREVIEW'}</small><strong>{quizThemes[theme].name}</strong><span>Question One</span></div><div className="quiz-details"><div className="quiz-badges"><Badge tone={selected?'green':'gray'}>{selected?'SELECTED':'READY'}</Badge><Badge>{quizThemes[theme].name}</Badge>{quiz.builtIn&&<Badge tone="amber">STARTER PACK</Badge>}</div><h3>{quiz.title}</h3><p>{rounds} {rounds === 1 ? 'round' : 'rounds'} · {quiz.questions.length} {quiz.questions.length === 1 ? 'question' : 'questions'}</p><label className="quiz-theme-quick"><span>VISUAL THEME</span><select value={theme} onChange={event=>void chooseTheme(quiz.id,event.target.value as QuizTheme)} disabled={cloudBusy}>{quizThemeIds.map(themeId=><option key={themeId} value={themeId}>{quizThemes[themeId].name}</option>)}</select><small>Styles PixelPlay and the Main Screen.</small></label><div className="quiz-card-actions"><Button onClick={() => openQuiz(quiz.id,'/host')}><Play size={17}/> Host this quiz</Button>{!quiz.builtIn&&<Button variant="secondary" onClick={() => openQuiz(quiz.id,'/editor')}><Edit3 size={16}/> Edit quiz</Button>}<Button variant="ghost" onClick={()=>exportQuiz(quiz)}><Download size={15}/> Export</Button><Button variant="ghost" onClick={()=>void copyQuiz(quiz.id)}><Copy size={15}/>{quiz.builtIn?'Copy to edit':'Duplicate'}</Button>{!quiz.builtIn&&<Button variant="danger" onClick={()=>void removeQuiz(quiz.id)}><Trash2 size={15}/> Delete</Button>}</div></div></div>
     })}</div>
     <div className="section-title lower"><h2>Workspace tools</h2></div><div className="feature-grid"><Link to="/join" className="feature-card"><div className="feature-icon lilac"><Users size={21}/></div><h3>PixelPlay Portal</h3><p>The permanent player page people bookmark, scan and use to enter each game code.</p><span>Open PixelPlay <ArrowRight size={16}/></span></Link><Link to="/screen" className="feature-card"><div className="feature-icon coral"><MonitorPlay size={21}/></div><h3>Screen launcher</h3><p>Enter a live session code to load its presentation on any display.</p><span>Open screen launcher <ArrowRight size={16}/></span></Link><div className="feature-card"><div className="feature-icon mint"><Sparkles size={21}/></div><h3>Avatar collection</h3><p>{packs.reduce((total,pack) => total+pack.avatars.length,0)} characters across {packs.length} avatar packs.</p><span>Available to every player <Check size={16}/></span></div></div>
   </main></Shell>
@@ -417,7 +429,7 @@ function Editor() {
     update(gameDraft => { gameDraft.title = titleDraft.trim(); gameDraft.theme = themeDraft; gameDraft.questions[selected] = prepared })
     const template = getActiveQuizTemplate()
     try {
-      if (template && await hasAdminSession()) await saveQuizTemplateCloud(template)
+      if (template) await saveQuizTemplateCloud(template)
       setValidation('')
     } catch (error) {
       setValidation(`Saved in this browser, but cloud sync failed: ${(error as Error).message}`)
@@ -472,7 +484,7 @@ function Editor() {
       <div className="editor-form">
         <div className="form-top"><div><Badge>{draft.round}</Badge><h2>Question {selected+1}</h2></div><Badge tone="gray">{draft.points} points</Badge></div>
         <div className="editor-identity-row"><label>Quiz name<input value={titleDraft} onChange={event=>setTitleDraft(event.target.value)} placeholder="My brilliant quiz"/></label><label>Visual theme<select value={themeDraft} onChange={event=>setThemeDraft(event.target.value as QuizTheme)}>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small className="field-help">Styles the Main Screen and every Player controller.</small></label></div>
-        <div className={`theme-picker theme-${themeDraft}`} style={themeSurfaceStyle(themeDraft)}><div><small>SELECTED THEME</small><strong>{quizThemes[themeDraft].name}</strong><span>{quizThemes[themeDraft].description}</span></div><img src={asset(`themes/${themeDraft}/frame.webp`)} alt=""/></div>
+        <div className={`theme-picker theme-${themeDraft}`} style={themeSurfaceStyle(themeDraft)}><div><small>SELECTED THEME</small><strong>{quizThemes[themeDraft].name}</strong><span className="theme-font-preview">Question One · Ready to Play?</span><span>{quizThemes[themeDraft].description}</span></div></div>
         <div className="editor-round-card"><div><small>ROUND</small><strong>{originalRound}</strong><span>{roundQuestionCount} {roundQuestionCount === 1 ? 'question' : 'questions'} scored together</span></div><Button variant="secondary" onClick={renameRound} disabled={draft.round.trim() === originalRound}>Rename whole round</Button></div>
         <div className="editor-round-row">
           <label>Assign to round<select value={roundNames.includes(draft.round) ? draft.round : '__custom'} onChange={event => event.target.value !== '__custom' && setDraft({...draft,round:event.target.value})}>{roundNames.map(name=><option key={name} value={name}>{name}</option>)}<option value="__custom">New round…</option></select></label>
@@ -513,7 +525,6 @@ function friendlyAuthError(error: unknown) {
 function Host() {
   const game = useGame(), packs = usePacks(), q = currentQuestion(game), [copied,setCopied]=useState<'screen'|'portal'|''>('')
   const [liveStatus, setLiveStatus] = useState(''), [canControl, setCanControl] = useState(false), [liveBusy, setLiveBusy] = useState(false)
-  const [authReady, setAuthReady] = useState(false), [adminSignedIn, setAdminSignedIn] = useState(false)
   const stopLive = useRef<(() => void) | null>(null)
   const answered = q ? game.responses.filter(r=>r.questionId===q.id) : []
   const next = actionLabel(game.phase)
@@ -526,16 +537,9 @@ function Host() {
     setTimeout(()=>setCopied(''),1800)
   }
   const startLive = async () => {
-    if (!authReady || liveBusy) return
+    if (liveBusy) return
     setLiveBusy(true)
     try {
-      if (!adminSignedIn) {
-        setLiveStatus('Opening secure Google sign-in…')
-        // This is deliberately the first awaited action in the click handler so
-        // the browser treats the Google window as user initiated.
-        await beginHostPopup()
-        setAdminSignedIn(true)
-      }
       setLiveStatus('Preparing live session…')
       stopLive.current?.()
       leaveLiveRole('host')
@@ -551,12 +555,8 @@ function Host() {
     let cancelled = false
     const restore = async () => {
       try {
-        setLiveStatus('Checking administrator access…')
-        const signedIn = await hasAdminSession()
-        if (cancelled) return
-        setAdminSignedIn(signedIn)
-        setAuthReady(true)
-        if (!signedIn || !(await hasHostSession())) { setLiveStatus(''); return }
+        setLiveStatus('Checking for an existing live session…')
+        if (!(await hasHostSession())) { if (!cancelled) setLiveStatus(''); return }
         if (cancelled) return
         setLiveBusy(true)
         setLiveStatus('Reconnecting live Host…')
@@ -567,7 +567,7 @@ function Host() {
         else stopLive.current = stop
       } catch (error) {
         if (!cancelled) setLiveStatus(`Live setup failed: ${friendlyAuthError(error)}`)
-      } finally { if (!cancelled) { setAuthReady(true); setLiveBusy(false) } }
+      } finally { if (!cancelled) setLiveBusy(false) }
     }
     void restore()
     return () => { cancelled = true; stopLive.current?.(); stopLive.current = null; leaveLiveRole('host') }
@@ -602,7 +602,7 @@ function Host() {
     <div className="page-heading">
       <div><div className="eyebrow dark">LIVE HOST CONSOLE</div><h1>{game.title}</h1><p>{liveConnected ? 'Session ready. Open the game-specific Main Screen, invite players, then start the quiz.' : 'Start a live session to create the Main Screen link and player game code.'}</p></div>
       <div className="host-head-actions">
-        {!liveConnected ? <Button onClick={()=>void startLive()} disabled={!authReady||liveBusy}><Play size={17}/>{!authReady ? 'Checking sign-in…' : liveBusy ? 'Connecting…' : 'Start live session'}</Button> : <>
+        {!liveConnected ? <Button onClick={()=>void startLive()} disabled={liveBusy}><Play size={17}/>{liveBusy ? 'Connecting…' : 'Start live session'}</Button> : <>
           <a className="btn secondary" href={screenUrl} target="_blank" rel="noreferrer"><MonitorPlay size={17}/> Open Main Screen</a>
           <Button variant="secondary" onClick={()=>void copy('screen')}><Copy size={16}/>{copied==='screen' ? 'Screen link copied' : 'Copy screen link'}</Button>
           <Button variant="secondary" onClick={()=>void copy('portal')}><Copy size={16}/>{copied==='portal' ? 'Portal copied' : 'Copy PixelPlay Portal'}</Button>
@@ -618,7 +618,7 @@ function Host() {
         <div className="host-session-code"><small>GAME CODE</small><b>{game.code}</b></div>
       </div>
       <div className="host-status"><div><span className="status-orb"><Play size={18}/></span><div><small>CURRENT SCREEN</small><strong>{phaseNames[game.phase]}</strong></div></div><span className="host-code">GAME CODE <b>{game.code}</b></span><Countdown game={game} className="host-timer"/><span className="host-count"><Users size={18}/>{game.players.length} players</span></div>
-    </> : <div className="host-session-empty"><span className="status-orb"><Play size={18}/></span><div><strong>No live session yet</strong><p>Administrator sign-in is remembered by this browser. Starting a session creates a new game or reconnects the current one.</p></div></div>}
+    </> : <div className="host-session-empty"><span className="status-orb"><Play size={18}/></span><div><strong>No live session yet</strong><p>Your XP Studio sign-in is remembered by this browser. Starting a session creates a new game or reconnects your current one.</p></div></div>}
     <div className="host-grid">
       <div className="host-main">
         <div className="host-question"><div className="host-q-top"><Badge>{q?.round || 'ROUND 1'}</Badge><span>QUESTION {game.questionIndex+1} / {game.questions.length}</span></div><h2>{q?.prompt}</h2>{q?.imageUrl&&<img className="host-question-image" src={q.imageUrl} alt={q.imageAlt || 'Question image'}/>}<div className="host-q-meta"><span><Clock3 size={16}/>{q?.duration || 30}s timer</span><span><Trophy size={16}/>{q?.points} pts</span><span>{q ? typeNames[q.type] : ''}</span></div>{q && <HostAnswerKey question={q}/>}{q?.options && <div className="host-options">{q.options.map((option,index)=><div key={option}><span>{'ABCD'[index]}</span>{option}</div>)}</div>}</div>
@@ -710,5 +710,5 @@ function AnswerInput({q,value,setValue,choice}:{q:Question;value:unknown;setValu
   return <div>{q.type==='anagram'&&<div className="scramble">{[...(q.scramble||String(q.answer||'').toUpperCase())].join(' ')}</div>}<input className="answer-text" placeholder={q.type==='anagram'?'Unscramble it…':'Type your answer…'} value={value as string} onChange={e=>setValue(e.target.value)}/></div>
 }
 function Admin() { return <Shell active="Admin"><AdminDashboard/></Shell> }
-function App() { return <HashRouter><Routes><Route path="/" element={<Home/>}/><Route path="/organiser" element={<Organiser/>}/><Route path="/editor" element={<Editor/>}/><Route path="/host" element={<Host/>}/><Route path="/screen" element={<MainScreen/>}/><Route path="/screen/:code" element={<MainScreen/>}/><Route path="/join" element={<Join/>}/><Route path="/join/:code" element={<Join/>}/><Route path="/admin" element={<Admin/>}/></Routes></HashRouter> }
+function App() { return <HashRouter><Routes><Route path="/" element={<Home/>}/><Route path="/organiser" element={<HostGate><Organiser/></HostGate>}/><Route path="/editor" element={<HostGate><Editor/></HostGate>}/><Route path="/host" element={<HostGate><Host/></HostGate>}/><Route path="/screen" element={<MainScreen/>}/><Route path="/screen/:code" element={<MainScreen/>}/><Route path="/join" element={<Join/>}/><Route path="/join/:code" element={<Join/>}/><Route path="/admin" element={<HostGate adminOnly><Admin/></HostGate>}/></Routes></HashRouter> }
 export default App
