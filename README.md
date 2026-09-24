@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-The organiser workspace, quiz editor, host console, Main Screen launcher, and Player Portal are available from the home page. Live sessions use Firestore so the Host can move every connected screen forward without a refresh. See [LIVE_SETUP.md](LIVE_SETUP.md) for the Firebase configuration.
+The organiser workspace, quiz editor, host console, PixelPlay Main Screen launcher, and PixelPlay Player Portal are available from the home page. Live sessions use Firestore so the Host can move every connected screen forward without a refresh. See [LIVE_SETUP.md](LIVE_SETUP.md) for the Firebase configuration.
 
 ## Current build
 

@@ -26,11 +26,11 @@ let quizLibrary: QuizTemplate[] = (() => {
 })()
 const canonicalTest = freshGame()
 const storedTest = quizLibrary.find(item => item.id === 'quizforge-test')
-const testTemplate: QuizTemplate = { id: 'quizforge-test', title: canonicalTest.title, theme: canonicalTest.theme, questions: structuredClone(canonicalTest.questions), builtIn: true, updatedAt: storedTest?.updatedAt || Date.now() }
+const testTemplate: QuizTemplate = { id: 'quizforge-test', title: canonicalTest.title, theme: storedTest?.theme || canonicalTest.theme, questions: structuredClone(canonicalTest.questions), builtIn: true, updatedAt: storedTest?.updatedAt || Date.now() }
 quizLibrary = [testTemplate, ...quizLibrary.filter(item => item.id !== 'quizforge-test')]
 let activeQuizId = localStorage.getItem(activeQuizKey) || quizLibrary[0].id
 if (!quizLibrary.some(quiz => quiz.id === activeQuizId)) activeQuizId = quizLibrary[0].id
-if (activeQuizId === 'quizforge-test') game = { ...canonicalTest, code: game.code }
+if (activeQuizId === 'quizforge-test') game = { ...canonicalTest, theme: testTemplate.theme, code: game.code }
 let librarySnapshot = { quizzes: quizLibrary, activeQuizId }
 localStorage.setItem(libraryKey, JSON.stringify(quizLibrary))
 localStorage.setItem(activeQuizKey, activeQuizId)
@@ -180,6 +180,17 @@ export function selectQuiz(id: string) {
   localStorage.removeItem('quiz-live-host-code')
   persistLibrary()
   save(gameFromQuiz(quiz))
+}
+export function setQuizTheme(id: string, theme: QuizTheme) {
+  if (liveRole) throw new Error('Leave the live session before changing its theme.')
+  const index = quizLibrary.findIndex(item => item.id === id)
+  if (index < 0) throw new Error('Quiz not found.')
+  const next = { ...quizLibrary[index], theme, updatedAt: Date.now() }
+  quizLibrary = quizLibrary.map((quiz, quizIndex) => quizIndex === index ? next : quiz)
+  persistLibrary()
+  if (activeQuizId === id) save(gameFromQuiz(next))
+  else notify()
+  return structuredClone(next)
 }
 export function resetGame() {
   if (liveRole) throw new Error('A live game cannot be reset as a local demo.')

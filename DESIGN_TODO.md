@@ -7,7 +7,8 @@ Reference: the supplied QuizForge design pack (creator host console, PixelPlay m
 - [ ] Refine the Host at 1280 × 720: bring the current-screen strip, next action, incoming answers, and full leaderboard above the fold. Make the answer table denser and show the next action more prominently, as in the host reference.
 - [ ] Give the Main Screen a dedicated 1280 × 720 layout. Keep the quiz title, question, four answer tiles, timer, and answer count visible without scrolling. Match the 2 × 2 tile spacing, coloured borders, corner pixels, and code panel in the PixelPlay mockup.
 - [ ] Refine the Player at 360–430px: place the identity card, timer bar, question card, and 60px answer targets in the order and spacing of the mockup. Add a clear selected and locked tile state, plus a compact confirmation panel.
-- [ ] Bring the Join screen closer to the mockup: group code and name in one bordered panel, align the avatar picker to four columns, and keep the primary join button visible without excessive scrolling on a phone.
+- [x] Brand the Join screen as PixelPlay, group code and name in one bordered pixel panel, and align the avatar picker to four columns on phones.
+- [ ] Keep the primary join button visible sooner on short phone screens without making the avatar choice too cramped.
 - [ ] Use the supplied pixel spark and frame SVGs in more state-specific details. Add restrained, reduced-motion-safe transitions for answer open, reveal, rank movement, and final results.
 - [ ] Check colour contrast, focus rings, 320/360/430/480px portrait, phone landscape, and 1280 × 720 / 1920 × 1080 presentation views on real browsers. Make any overflow and text-wrap corrections found there.
 
@@ -17,9 +18,16 @@ Reference: the supplied QuizForge design pack (creator host console, PixelPlay m
 - [ ] Add per-question score feedback, round-only score screen, and cumulative leaderboard controls to the host console, including clear previews of what will appear next.
 - [ ] Add dedicated lobby, break, round-intro, leaderboard, and final-result layouts with the avatar emphasis shown in the design pack.
 - [ ] Complete the cross-device acceptance test for the Firestore mode with one Host, one Main Screen, and two separate Player devices. The local demo still synchronises tabs in one browser.
-- [ ] Add a theme selector and preserve the PixelPlay theme as the default. Quiz themes should override colours and optional decoration while retaining the accessibility rules.
+- [x] Add a visible theme selector to every quiz card and the quiz editor. Persist the selected theme and apply it to the PixelPlay Player and Main Screen surfaces.
 - [ ] Replace remaining legacy light-theme CSS with token-based creator and live components. Extract reusable `AnswerTile`, `TimerBar`, `GameCode`, `ScoreRow`, and `AvatarFrame` components.
 
 ## Visual asset status
 
-The supplied final logo, favicon, pixel grid, and corner SVG are already in use. No new background graphic is needed for the current PixelPlay shell; the supplied pixel grid gives the intended texture. More elaborate round art can be added when theme selection exists.
+The supplied final QuizForge logo, favicon, pixel grid, and corner SVG are in use. QuizForge now has an 8-bit host platypus hero and a custom foundry building with question-format, theme, and live-sync readouts. PixelPlay has a dedicated transparent pixel logo used by the player portal and Main Screen. Six selectable themes include raster background and frame art: Quiz Show, Western, Neon Sci-Fi, Arcane Fantasy, Monster Mash, and Celebration.
+
+### Further rich-asset pass
+
+- [ ] Add distinct round-intro, break, reveal, score, and final-result pixel scenes for each theme.
+- [ ] Add themed timer shells, answer-tile corner pieces, score podiums, and transition sprites.
+- [ ] Add reduced-motion alternatives for every animated asset.
+- [ ] Create separate mobile crops where a full-screen background loses its focal point at 360–430px.
