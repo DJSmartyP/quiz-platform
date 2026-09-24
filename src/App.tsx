@@ -3,7 +3,7 @@ import { HashRouter, Link, NavLink, Route, Routes, useNavigate, useParams } from
 import { ArrowRight, Check, CircleHelp, Clock3, Copy, Download, Edit3, ExternalLink, Gamepad2, ImagePlus, LayoutDashboard, MonitorPlay, Play, Plus, ShieldCheck, Sparkles, Trash2, Trophy, Upload, Users } from 'lucide-react'
 import { anagramDisplay, currentQuestion, gradeFor, isAnswerComplete, quizThemes, ranked, rankedRound, responseFor, roundPoints, scrambleWord, typeInstructions, typeNames, type Game, type Player, type Question, type QuestionType, type QuizTheme } from './model'
 import { actionLabel, createQuiz, deleteQuiz, duplicateQuiz, expireAnswers, getActiveQuizTemplate, getLiveRole, importQuiz, leaveLiveRole, replaceQuizLibrary, selectQuiz, setQuizTheme, update, useGame, useQuizLibrary, type QuizTemplate } from './store'
-import { beginHostRedirect, deleteQuizTemplateCloud, finishHostRedirect, followLiveScreen, hasAdminSession, hasHostSession, hostRedirectKey, joinLiveGame, liveHostCommand, reconnectLivePlayer, saveQuizTemplateCloud, startLiveHost, submitLiveAnswer, syncQuizLibrary, takeLiveControl } from './live'
+import { beginHostPopup, deleteQuizTemplateCloud, followLiveScreen, hasAdminSession, hasHostSession, joinLiveGame, liveHostCommand, reconnectLivePlayer, saveQuizTemplateCloud, startLiveHost, submitLiveAnswer, syncQuizLibrary, takeLiveControl } from './live'
 import { answerLabel, type OwnResult } from './reveal'
 import QRCode from 'qrcode'
 import AdminDashboard from './AdminDashboard'
@@ -324,14 +324,6 @@ function Organiser() {
   useEffect(() => {
     let active = true
     const restore = async () => {
-      const redirectPending = sessionStorage.getItem(hostRedirectKey) === '1'
-      if (redirectPending) {
-        setCloudBusy(true)
-        setCloudStatus('Completing administrator sign-in…')
-        try { await finishHostRedirect(); sessionStorage.removeItem(hostRedirectKey) }
-        catch (error) { sessionStorage.removeItem(hostRedirectKey); if (active) setCloudStatus(`Sign-in failed: ${(error as Error).message}`) }
-        finally { if (active) setCloudBusy(false) }
-      }
       const signedIn = await hasAdminSession()
       if (!active) return
       if (signedIn) void connectCloud(false)
@@ -345,8 +337,9 @@ function Organiser() {
   const signInWorkspace = async () => {
     setCloudBusy(true)
     setCloudStatus('Opening secure Google sign-in…')
-    try { await beginHostRedirect() }
-    catch (error) { setCloudStatus(`Sign-in failed: ${(error as Error).message}`); setCloudBusy(false) }
+    try { await beginHostPopup(); await connectCloud(false) }
+    catch (error) { setCloudStatus(`Sign-in failed: ${friendlyAuthError(error)}`) }
+    finally { setCloudBusy(false) }
   }
   const makeQuiz = () => { createQuiz(); nav('/editor') }
   const openQuiz = (id: string, destination: '/editor' | '/host') => { if (id !== library.activeQuizId) selectQuiz(id); nav(destination) }
@@ -510,9 +503,17 @@ function Editor() {
   </main></Shell>
 }
 const phaseNames: Record<string,string> = {lobby:'Lobby', 'round-intro':'Round introduction', question:'Question display', open:'Answers open', closed:'Answers closed', reveal:'Answer reveal', scores:'Question scores', 'round-scores':'Round scores', leaderboard:'Overall leaderboard', final:'Final leaderboard', thanks:'Thank you', break:'Break', 'closed-game':'Session closed'}
+function friendlyAuthError(error: unknown) {
+  const detail = error as { code?: string; message?: string }
+  if (detail.code === 'auth/popup-blocked') return 'Your browser blocked Google sign-in. Allow popups for QuizForge and try again.'
+  if (detail.code === 'auth/popup-closed-by-user') return 'Google sign-in closed before it finished. Try again and leave the sign-in window open.'
+  if (detail.code === 'auth/cancelled-popup-request') return 'Another sign-in attempt is already open. Finish it, then try again.'
+  return detail.message || 'Google sign-in could not be completed.'
+}
 function Host() {
   const game = useGame(), packs = usePacks(), q = currentQuestion(game), [copied,setCopied]=useState<'screen'|'portal'|''>('')
   const [liveStatus, setLiveStatus] = useState(''), [canControl, setCanControl] = useState(false), [liveBusy, setLiveBusy] = useState(false)
+  const [authReady, setAuthReady] = useState(false), [adminSignedIn, setAdminSignedIn] = useState(false)
   const stopLive = useRef<(() => void) | null>(null)
   const answered = q ? game.responses.filter(r=>r.questionId===q.id) : []
   const next = actionLabel(game.phase)
@@ -525,21 +526,24 @@ function Host() {
     setTimeout(()=>setCopied(''),1800)
   }
   const startLive = async () => {
+    if (!authReady || liveBusy) return
     setLiveBusy(true)
-    setLiveStatus('Preparing administrator access…')
     try {
-      if (!(await hasAdminSession())) {
+      if (!adminSignedIn) {
         setLiveStatus('Opening secure Google sign-in…')
-        await beginHostRedirect()
-        return
+        // This is deliberately the first awaited action in the click handler so
+        // the browser treats the Google window as user initiated.
+        await beginHostPopup()
+        setAdminSignedIn(true)
       }
+      setLiveStatus('Preparing live session…')
       stopLive.current?.()
       leaveLiveRole('host')
       setCanControl(false)
       stopLive.current = await startLiveHost((message, control) => { setLiveStatus(message); setCanControl(control) }, false)
     }
     catch (error) {
-      setLiveStatus(`Live setup failed: ${(error as Error).message}`)
+      setLiveStatus(`Live setup failed: ${friendlyAuthError(error)}`)
     }
     finally { setLiveBusy(false) }
   }
@@ -547,22 +551,23 @@ function Host() {
     let cancelled = false
     const restore = async () => {
       try {
-        const redirectPending = sessionStorage.getItem(hostRedirectKey) === '1'
-        if (!redirectPending && !(await hasHostSession())) return
+        setLiveStatus('Checking administrator access…')
+        const signedIn = await hasAdminSession()
+        if (cancelled) return
+        setAdminSignedIn(signedIn)
+        setAuthReady(true)
+        if (!signedIn || !(await hasHostSession())) { setLiveStatus(''); return }
         if (cancelled) return
         setLiveBusy(true)
-        setLiveStatus(redirectPending ? 'Completing Google sign-in…' : 'Reconnecting live Host…')
-        if (redirectPending) await finishHostRedirect()
-        if (cancelled) return
-        sessionStorage.removeItem(hostRedirectKey)
+        setLiveStatus('Reconnecting live Host…')
         const stop = await startLiveHost((message, control) => {
           if (!cancelled) { setLiveStatus(message); setCanControl(control) }
-        }, false)
+        }, false, false, false)
         if (cancelled) stop()
         else stopLive.current = stop
       } catch (error) {
-        if (!cancelled) { sessionStorage.removeItem(hostRedirectKey); setLiveStatus(`Live setup failed: ${(error as Error).message}`) }
-      } finally { if (!cancelled) setLiveBusy(false) }
+        if (!cancelled) setLiveStatus(`Live setup failed: ${friendlyAuthError(error)}`)
+      } finally { if (!cancelled) { setAuthReady(true); setLiveBusy(false) } }
     }
     void restore()
     return () => { cancelled = true; stopLive.current?.(); stopLive.current = null; leaveLiveRole('host') }
@@ -597,7 +602,7 @@ function Host() {
     <div className="page-heading">
       <div><div className="eyebrow dark">LIVE HOST CONSOLE</div><h1>{game.title}</h1><p>{liveConnected ? 'Session ready. Open the game-specific Main Screen, invite players, then start the quiz.' : 'Start a live session to create the Main Screen link and player game code.'}</p></div>
       <div className="host-head-actions">
-        {!liveConnected ? <Button onClick={()=>void startLive()} disabled={liveBusy}><Play size={17}/>{liveBusy ? 'Connecting…' : 'Start live session'}</Button> : <>
+        {!liveConnected ? <Button onClick={()=>void startLive()} disabled={!authReady||liveBusy}><Play size={17}/>{!authReady ? 'Checking sign-in…' : liveBusy ? 'Connecting…' : 'Start live session'}</Button> : <>
           <a className="btn secondary" href={screenUrl} target="_blank" rel="noreferrer"><MonitorPlay size={17}/> Open Main Screen</a>
           <Button variant="secondary" onClick={()=>void copy('screen')}><Copy size={16}/>{copied==='screen' ? 'Screen link copied' : 'Copy screen link'}</Button>
           <Button variant="secondary" onClick={()=>void copy('portal')}><Copy size={16}/>{copied==='portal' ? 'Portal copied' : 'Copy PixelPlay Portal'}</Button>

@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { browserLocalPersistence, getAuth, getRedirectResult, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup, signInWithRedirect } from 'firebase/auth'
+import { browserLocalPersistence, getAuth, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup, type Auth, type User } from 'firebase/auth'
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, query, runTransaction, serverTimestamp, setDoc, where, type Unsubscribe } from 'firebase/firestore'
 import { advanceGame, breakGame, resumeGame } from './gameEngine'
 import { currentQuestion, isLastQuestionInRound, type Game, type Player, type Response } from './model'
@@ -20,12 +20,14 @@ const screenApp = initializeApp(config, 'quiz-screen')
 const hostDb = getFirestore(hostApp)
 const playerDb = getFirestore(playerApp)
 const screenDb = getFirestore(screenApp)
-const hostAuth = getAuth(hostApp)
-const playerAuth = getAuth(playerApp)
-// One approved admin browser keeps the same controller identity across reloads
-// and normal navigation. State-version checks still reject stale double actions.
-const controllerId = localStorage.getItem('quiz-host-controller-id') || crypto.randomUUID()
-localStorage.setItem('quiz-host-controller-id', controllerId)
+let hostAuthInstance: Auth | null = null
+let playerAuthInstance: Auth | null = null
+function hostAuth() { return hostAuthInstance ||= getAuth(hostApp) }
+function playerAuth() { return playerAuthInstance ||= getAuth(playerApp) }
+// Control belongs to one GM tab. Hash navigation and reloads retain the tab's
+// token, while a Main Screen or second Host tab receives a different token.
+const controllerId = sessionStorage.getItem('quiz-host-controller-id') || crypto.randomUUID()
+sessionStorage.setItem('quiz-host-controller-id', controllerId)
 
 type PublicDocument = { hostUid: string; controllerId: string; memberUids: string[]; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
 type PrivateDocument = { hostUid: string; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
@@ -38,40 +40,43 @@ function newGameCode() {
   return [...values].map(value => codeAlphabet[value % codeAlphabet.length]).join('')
 }
 
-export const hostRedirectKey = 'quiz-host-redirect-pending'
-let redirectFinishPromise: Promise<void> | null = null
+function isApprovedAdmin(user: User | null) {
+  return Boolean(user && user.email?.toLowerCase() === 'nickpatel.trainer@gmail.com' && user.emailVerified &&
+    user.providerData.some(provider => provider.providerId === 'google.com'))
+}
+
+function requireApprovedAdmin(user: User | null) {
+  if (!user) throw new Error('Google sign-in did not complete. Try opening QuizForge in Chrome or Edge.')
+  if (!isApprovedAdmin(user)) throw new Error('Only nickpatel.trainer@gmail.com can control QuizForge live games.')
+  return user
+}
 
 export async function hasHostSession() {
-  await setPersistence(hostAuth, browserLocalPersistence)
-  await hostAuth.authStateReady()
-  return Boolean(hostAuth.currentUser && localStorage.getItem('quiz-live-host-code'))
+  const auth = hostAuth()
+  await setPersistence(auth, browserLocalPersistence)
+  await auth.authStateReady()
+  return Boolean(isApprovedAdmin(auth.currentUser) && localStorage.getItem('quiz-live-host-code'))
 }
 
-export async function beginHostRedirect() {
-  await setPersistence(hostAuth, browserLocalPersistence)
-  sessionStorage.setItem(hostRedirectKey, '1')
-  try { await signInWithRedirect(hostAuth, new GoogleAuthProvider()) }
-  catch (error) { sessionStorage.removeItem(hostRedirectKey); throw error }
-}
-
-export function finishHostRedirect() {
-  redirectFinishPromise ||= (async () => {
-    await getRedirectResult(hostAuth)
-    await hostAuth.authStateReady()
-    if (!hostAuth.currentUser) throw new Error('Google sign-in did not complete. Try opening QuizForge in Chrome or Edge.')
-  })()
-  return redirectFinishPromise
+/**
+ * Called directly from the Start live session click. There must be no await
+ * before signInWithPopup or browsers may treat the window as unsolicited.
+ */
+export async function beginHostPopup() {
+  const auth = hostAuth()
+  const resultPromise = signInWithPopup(auth, new GoogleAuthProvider())
+  const result = await resultPromise
+  const user = requireApprovedAdmin(result.user)
+  await setPersistence(auth, browserLocalPersistence)
+  await user.getIdToken(true)
+  return user.uid
 }
 
 async function hostUid(allowPopup = true) {
-  await setPersistence(hostAuth, browserLocalPersistence)
-  await hostAuth.authStateReady()
-  const user = hostAuth.currentUser || (allowPopup ? (await signInWithPopup(hostAuth, new GoogleAuthProvider())).user : null)
-  if (!user) throw new Error('Google sign-in did not complete. Try opening QuizForge in Chrome or Edge.')
-  if (user.email?.toLowerCase() !== 'nickpatel.trainer@gmail.com' || !user.emailVerified ||
-      !user.providerData.some(provider => provider.providerId === 'google.com')) {
-    throw new Error('Only nickpatel.trainer@gmail.com can control QuizForge live games.')
-  }
+  const auth = hostAuth()
+  await setPersistence(auth, browserLocalPersistence)
+  await auth.authStateReady()
+  const user = requireApprovedAdmin(auth.currentUser || (allowPopup ? (await signInWithPopup(auth, new GoogleAuthProvider())).user : null))
   // Refresh the token before Firestore listeners attach. This avoids a restored
   // browser session briefly using claims from an older authentication state.
   await user.getIdToken(true)
@@ -79,10 +84,10 @@ async function hostUid(allowPopup = true) {
 }
 
 export async function hasAdminSession() {
-  await setPersistence(hostAuth, browserLocalPersistence)
-  await hostAuth.authStateReady()
-  const user = hostAuth.currentUser
-  return Boolean(user && user.email?.toLowerCase() === 'nickpatel.trainer@gmail.com' && user.emailVerified && user.providerData.some(provider => provider.providerId === 'google.com'))
+  const auth = hostAuth()
+  await setPersistence(auth, browserLocalPersistence)
+  await auth.authStateReady()
+  return isApprovedAdmin(auth.currentUser)
 }
 
 /**
@@ -117,9 +122,10 @@ export async function deleteQuizTemplateCloud(id: string) {
 }
 
 async function playerUid() {
-  await setPersistence(playerAuth, browserLocalPersistence)
-  await playerAuth.authStateReady()
-  return (playerAuth.currentUser || (await signInAnonymously(playerAuth)).user).uid
+  const auth = playerAuth()
+  await setPersistence(auth, browserLocalPersistence)
+  await auth.authStateReady()
+  return (auth.currentUser || (await signInAnonymously(auth)).user).uid
 }
 
 function serialise<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T }
@@ -136,7 +142,7 @@ function timedGame(data: PublicDocument | PrivateDocument): Game {
   return { ...data.game, openedAt, closesAt: openedAt + duration * 1000 }
 }
 
-export async function startLiveHost(onStatus: (message: string, canControl: boolean) => void, allowPopup = true, fresh = false) {
+export async function startLiveHost(onStatus: (message: string, canControl: boolean) => void, allowPopup = true, fresh = false, claimControl = true) {
   if (!getGame().questions.length) throw new Error('Add at least one question before starting a live game.')
   const uid = await hostUid(allowPopup)
   const code = (fresh ? null : localStorage.getItem('quiz-live-host-code')) || newGameCode()
@@ -146,7 +152,9 @@ export async function startLiveHost(onStatus: (message: string, canControl: bool
     const existing = await tx.get(publicRef)
     if (existing.exists()) {
       if (existing.data().hostUid !== uid) throw new Error('This code belongs to another Host.')
-      if (existing.data().controllerId !== controllerId) tx.update(publicRef, { controllerId })
+      // A restored secondary Host tab is an observer until the GM explicitly
+      // presses Take Control. User-initiated starts still claim control.
+      if (claimControl && existing.data().controllerId !== controllerId) tx.update(publicRef, { controllerId })
       return
     }
     const initial: Game = serialise({ ...getGame(), code, phase: 'lobby', questionIndex: 0,
@@ -195,7 +203,7 @@ export async function startLiveHost(onStatus: (message: string, canControl: bool
 
 export async function takeLiveControl() {
   if (!liveHostCode) throw new Error('Connect to the live game first.')
-  const uid = await hostUid()
+  const uid = await hostUid(false)
   const ref = doc(hostDb, 'liveGames', liveHostCode)
   await runTransaction(hostDb, async tx => {
     const current = await tx.get(ref)
