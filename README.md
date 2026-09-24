@@ -19,6 +19,7 @@ The organiser workspace, quiz editor, host console, PixelPlay Main Screen launch
 - Anagrams have an editable answer, a saved jumble, and letters that progressively lock into place while the timer runs.
 - Text-based questions can include an image; dedicated photo reveal and photo zoom modes animate from authoritative timestamps.
 - Six selectable 8-bit visual themes style the Main Screen and Player controller: Quiz Show, Western, Neon Sci-Fi, Arcane Fantasy, Monster Mash, and Celebration.
+- Every visual theme includes dedicated full-screen intermission and thank-you finale artwork, with brighter presentation and controller backgrounds throughout the live game.
 - All 143 supplied avatars across 12 packs, including the 13 transparent Sci-Fi cutouts. The original Standard and Platypus images are preserved.
 - The Firestore Host/Main Screen/Player flow uses Google Host sign-in, anonymous Player identities, narrow realtime listeners, deterministic submissions, and versioned Host transitions.
 - Quiz packs can be created, duplicated, imported, exported, and saved to each signed-in Host's private cloud library.
