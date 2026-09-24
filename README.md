@@ -1,6 +1,6 @@
 # QuizForge
 
-Interactive review build for the QuizForge creator platform and its default PixelPlay live theme. The complete product plan is in [BUILD_SPEC.md](BUILD_SPEC.md), and the mockup gap list is in [DESIGN_TODO.md](DESIGN_TODO.md).
+QuizForge is a live, host-led quiz platform for a shared Main Screen and player phones. The complete product plan is in [BUILD_SPEC.md](BUILD_SPEC.md), and the mockup gap list is in [DESIGN_TODO.md](DESIGN_TODO.md).
 
 ## Preview
 
@@ -11,15 +11,17 @@ npm ci
 npm run dev
 ```
 
-The organiser workspace, quiz editor, host console, main screen, and player view are available from the home page. Open Host, Main screen, and Player view in separate tabs in **one browser** to try the sample quiz. The browser-local demo uses browser storage; the Firestore live mode is being activated separately as described in [LIVE_SETUP.md](LIVE_SETUP.md).
+The organiser workspace, quiz editor, host console, Main Screen launcher, and Player Portal are available from the home page. Live sessions use Firestore so the Host can move every connected screen forward without a refresh. See [LIVE_SETUP.md](LIVE_SETUP.md) for the Firebase configuration.
 
-## Scope of this review build
+## Current build
 
-- Twelve sample question formats, host progression, answer submission, visible countdowns, score calculation, round-only scores, cumulative leaderboard, and a small prompt editor.
+- Fourteen question formats, host progression, answer submission, visible countdowns, score calculation, round-only scores, cumulative leaderboard, and a complete question editor.
 - Anagrams have an editable answer, a saved jumble, and letters that progressively lock into place while the timer runs.
+- Text-based questions can include an image; dedicated photo reveal and photo zoom modes animate from authoritative timestamps.
+- Six selectable 8-bit visual themes style the Main Screen and Player controller: Quiz Show, Western, Neon Sci-Fi, Arcane Fantasy, Monster Mash, and Celebration.
 - All 143 supplied avatars across 12 packs, including the 13 transparent Sci-Fi cutouts. The original Standard and Platypus images are preserved.
-- The Firestore Host/Main Screen/Player mode is wired alongside the browser-local demo. Google Host and anonymous Player sign-in are enabled; a full cross-device game is the next acceptance test.
-- The admin dashboard can inspect the signed-in Host's active live session and export its scores. Persistent quiz storage, media, PDF export, account approval, and multi-game administration remain in the build specification.
+- The Firestore Host/Main Screen/Player flow uses Google Host sign-in, anonymous Player identities, narrow realtime listeners, deterministic submissions, and versioned Host transitions.
+- Quiz packs can be created, duplicated, imported, exported, and saved to the signed-in administrator account.
 
 ## Build and deploy
 

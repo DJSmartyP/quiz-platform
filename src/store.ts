@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { currentQuestion, freshGame, gradeFor, isLastQuestionInRound, normalise, ranked, responseFor, scoreAnswer, scrambleWord, type Game, type Phase, type Question } from './model'
+import { currentQuestion, freshGame, gradeFor, isLastQuestionInRound, normalise, ranked, responseFor, scoreAnswer, scrambleWord, type Game, type Phase, type Question, type QuizTheme } from './model'
 import { advanceGame, breakGame, resumeGame } from './gameEngine'
 
 const key = 'quiz-platform-demo-v1'
@@ -8,6 +8,7 @@ const activeQuizKey = 'quiz-platform-active-quiz-v1'
 let game: Game = (() => {
   try {
     const loaded = JSON.parse(localStorage.getItem(key) || '') as Game
+    loaded.theme = loaded.theme || 'quiz-show'
     loaded.questions = loaded.questions.map(q => q.type === 'anagram' && !q.scramble ? { ...q, scramble: scrambleWord(String(q.answer)) } : q)
     if (loaded.phase === 'open' && loaded.openedAt && !loaded.closesAt) loaded.closesAt = loaded.openedAt + (loaded.questions[loaded.questionIndex].duration || 30) * 1000
     if (loaded.phase === 'scores' && isLastQuestionInRound(loaded)) loaded.phase = 'round-scores'
@@ -15,17 +16,17 @@ let game: Game = (() => {
     return loaded
   } catch { return freshGame() }
 })()
-export type QuizTemplate = { id: string; title: string; questions: Question[]; builtIn?: boolean; updatedAt: number }
+export type QuizTemplate = { id: string; title: string; theme: QuizTheme; questions: Question[]; builtIn?: boolean; updatedAt: number }
 let quizLibrary: QuizTemplate[] = (() => {
   try {
     const loaded = JSON.parse(localStorage.getItem(libraryKey) || '') as QuizTemplate[]
-    if (Array.isArray(loaded) && loaded.length) return loaded
+    if (Array.isArray(loaded) && loaded.length) return loaded.map(quiz => ({ ...quiz, theme: quiz.theme || 'quiz-show' }))
   } catch { /* Migrate the existing single quiz below. */ }
-  return [{ id: 'quizforge-test', title: game.title, questions: structuredClone(game.questions), builtIn: true, updatedAt: Date.now() }]
+  return [{ id: 'quizforge-test', title: game.title, theme: game.theme, questions: structuredClone(game.questions), builtIn: true, updatedAt: Date.now() }]
 })()
 const canonicalTest = freshGame()
 const storedTest = quizLibrary.find(item => item.id === 'quizforge-test')
-const testTemplate: QuizTemplate = { id: 'quizforge-test', title: canonicalTest.title, questions: structuredClone(canonicalTest.questions), builtIn: true, updatedAt: storedTest?.updatedAt || Date.now() }
+const testTemplate: QuizTemplate = { id: 'quizforge-test', title: canonicalTest.title, theme: canonicalTest.theme, questions: structuredClone(canonicalTest.questions), builtIn: true, updatedAt: storedTest?.updatedAt || Date.now() }
 quizLibrary = [testTemplate, ...quizLibrary.filter(item => item.id !== 'quizforge-test')]
 let activeQuizId = localStorage.getItem(activeQuizKey) || quizLibrary[0].id
 if (!quizLibrary.some(quiz => quiz.id === activeQuizId)) activeQuizId = quizLibrary[0].id
@@ -47,8 +48,8 @@ function syncActiveQuiz(next: Game) {
   const index = quizLibrary.findIndex(quiz => quiz.id === activeQuizId)
   if (index < 0) return
   const current = quizLibrary[index]
-  if (current.title === next.title && JSON.stringify(current.questions) === JSON.stringify(next.questions)) return
-  quizLibrary = quizLibrary.map((quiz, quizIndex) => quizIndex === index ? { ...quiz, title: next.title, questions: structuredClone(next.questions), updatedAt: Date.now() } : quiz)
+  if (current.title === next.title && current.theme === next.theme && JSON.stringify(current.questions) === JSON.stringify(next.questions)) return
+  quizLibrary = quizLibrary.map((quiz, quizIndex) => quizIndex === index ? { ...quiz, title: next.title, theme: next.theme, questions: structuredClone(next.questions), updatedAt: Date.now() } : quiz)
   persistLibrary()
   // An edited quiz must start a new live session. Reusing the previous code
   // would reconnect the Host to the old Firestore copy instead of these edits.
@@ -104,13 +105,13 @@ export function update(fn: (draft: Game) => void) {
   save(draft)
 }
 function gameFromQuiz(quiz: QuizTemplate): Game {
-  return { ...freshGame(), title: quiz.title, questions: structuredClone(quiz.questions), code: game.code }
+  return { ...freshGame(), title: quiz.title, theme: quiz.theme || 'quiz-show', questions: structuredClone(quiz.questions), code: game.code }
 }
 export function createQuiz(title = 'Untitled Quiz') {
   if (liveRole) throw new Error('Leave the live session before changing quizzes.')
   const id = crypto.randomUUID()
   const starter: Question = { id: crypto.randomUUID(), round: 'ROUND 1', type: 'single', prompt: 'New question', options: ['Answer A', 'Answer B', 'Answer C', 'Answer D'], answer: 'Answer A', points: 1000, duration: 30 }
-  const quiz: QuizTemplate = { id, title, questions: [starter], updatedAt: Date.now() }
+  const quiz: QuizTemplate = { id, title, theme: 'quiz-show', questions: [starter], updatedAt: Date.now() }
   quizLibrary = [...quizLibrary, quiz]
   activeQuizId = id
   localStorage.removeItem('quiz-live-host-code')
@@ -125,6 +126,7 @@ export function duplicateQuiz(id: string) {
   const quiz: QuizTemplate = {
     id: crypto.randomUUID(),
     title: `${source.title} copy`,
+    theme: source.theme || 'quiz-show',
     questions: structuredClone(source.questions).map(question => ({ ...question, id: crypto.randomUUID() })),
     updatedAt: Date.now(),
   }
@@ -135,11 +137,12 @@ export function duplicateQuiz(id: string) {
   save(gameFromQuiz(quiz))
   return quiz
 }
-export function importQuiz(title: string, questions: Question[]) {
+export function importQuiz(title: string, questions: Question[], theme: QuizTheme = 'quiz-show') {
   if (liveRole) throw new Error('Leave the live session before importing a quiz.')
   const quiz: QuizTemplate = {
     id: crypto.randomUUID(),
     title,
+    theme,
     questions: structuredClone(questions).map(question => ({ ...question, id: crypto.randomUUID() })),
     updatedAt: Date.now(),
   }
@@ -163,7 +166,7 @@ export function deleteQuiz(id: string) {
 }
 export function replaceQuizLibrary(quizzes: QuizTemplate[]) {
   if (liveRole || !quizzes.length) return
-  quizLibrary = structuredClone(quizzes)
+  quizLibrary = structuredClone(quizzes).map(quiz => ({ ...quiz, theme: quiz.theme || 'quiz-show' }))
   if (!quizLibrary.some(item => item.id === activeQuizId)) activeQuizId = quizLibrary[0].id
   persistLibrary()
   const active = quizLibrary.find(item => item.id === activeQuizId)

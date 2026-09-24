@@ -1,4 +1,14 @@
 export type QuestionType = 'single' | 'multi' | 'boolean' | 'text' | 'free' | 'number' | 'closest' | 'ordering' | 'matching' | 'categorise' | 'list' | 'anagram' | 'photo-reveal' | 'photo-zoom'
+export type QuizTheme = 'quiz-show' | 'western' | 'neon-sci-fi' | 'arcane-fantasy' | 'monster-mash' | 'celebration'
+
+export const quizThemes: Record<QuizTheme, { name: string; description: string }> = {
+  'quiz-show': { name: 'Quiz Show', description: 'Marquee bulbs, spotlights and prime-time energy.' },
+  western: { name: 'Western', description: 'Timber, lanterns and a dramatic desert sunset.' },
+  'neon-sci-fi': { name: 'Neon Sci-Fi', description: 'Holograms, starfields and electric control panels.' },
+  'arcane-fantasy': { name: 'Arcane Fantasy', description: 'Crystals, spell books and moonlit magic.' },
+  'monster-mash': { name: 'Monster Mash', description: 'A playful haunted mansion full of glowing potions.' },
+  celebration: { name: 'Celebration', description: 'Balloons, confetti and a sparkling party stage.' },
+}
 
 export type Question = {
   id: string
@@ -25,6 +35,7 @@ export type Phase = 'lobby' | 'round-intro' | 'question' | 'open' | 'closed' | '
 export type Game = {
   code: string
   title: string
+  theme: QuizTheme
   phase: Phase
   returnPhase?: Phase
   questionIndex: number
@@ -122,7 +133,7 @@ export const sampleQuestions: Question[] = [
 ]
 
 export const freshGame = (): Game => ({
-  code: 'PEAK7', title: 'The Great Quiz Night', phase: 'lobby', questionIndex: 0,
+  code: 'PEAK7', title: 'The Great Quiz Night', theme: 'quiz-show', phase: 'lobby', questionIndex: 0,
   stateVersion: 1, allowLateJoins: true, players: [], responses: [], grades: [],
   questions: sampleQuestions.map(q => q.type === 'anagram' ? { ...q, scramble: scrambleWord(String(q.answer)) } : { ...q }),
 })
