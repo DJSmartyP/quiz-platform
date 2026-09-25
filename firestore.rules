@@ -55,6 +55,14 @@ service cloud.firestore {
         allow delete: if activeHost(uid) && resource.data.ownerUid == uid;
       }
 
+      match /quizDeletions/{quizId} {
+        allow get, list: if activeHost(uid);
+        allow create, update: if activeHost(uid) &&
+          request.resource.data.keys().hasOnly(['ownerUid', 'deletedAtMs']) &&
+          request.resource.data.ownerUid == uid && request.resource.data.deletedAtMs is int;
+        allow delete: if activeHost(uid) || isAdmin();
+      }
+
       match /sessions/{code} {
         allow get, list: if activeHost(uid) || isAdmin();
         allow create: if activeHost(uid) && request.resource.data.ownerUid == uid && request.resource.data.code == code;

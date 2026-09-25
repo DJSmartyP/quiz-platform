@@ -1,5 +1,5 @@
 export type QuestionType = 'single' | 'multi' | 'boolean' | 'text' | 'free' | 'number' | 'closest' | 'ordering' | 'matching' | 'categorise' | 'list' | 'anagram' | 'photo-reveal' | 'photo-zoom'
-export type QuizTheme = 'quiz-show' | 'western' | 'neon-sci-fi' | 'arcane-fantasy' | 'monster-mash' | 'celebration'
+export type QuizTheme = 'quiz-show' | 'western' | 'neon-sci-fi' | 'arcane-fantasy' | 'monster-mash' | 'celebration' | 'retro-sports' | 'pixel-cinema' | 'world-tour' | 'synthwave-festival' | 'deep-sea' | 'detective-noir'
 
 export type ThemeSceneCopy = {
   kicker: string
@@ -47,6 +47,36 @@ export const quizThemes: Record<QuizTheme, QuizThemeDefinition> = {
     name: 'Celebration', description: 'Balloons, confetti and a sparkling party stage.',
     break: { kicker: 'PARTY PAUSE', title: 'Refill and recharge', screen: 'Top up the snacks and save some energy. The next round of the party starts soon.', playerTitle: 'Party paused', player: 'Keep this page open. The Host will restart the celebration automatically.', symbol: 'Ⅱ' },
     finale: { kicker: 'GRAND FINALE', title: 'What a celebration!', screen: 'The confetti has fallen and the final scores are in. Thanks for bringing the party to XP Play.', playerTitle: 'Thanks for celebrating!', player: 'You brought brilliant energy to the game.', symbol: '★' },
+  },
+  'retro-sports': {
+    name: 'Retro Sports', description: 'Multisport equipment, floodlights and arcade tournament energy.',
+    break: { kicker: 'TIME OUT', title: 'Take a breather', screen: 'The clock has stopped. Grab a drink, reset your game plan and get ready for the next round.', playerTitle: 'Time out', player: 'Keep this page open. The Host will call everyone back into play automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'FULL TIME', title: 'A champion performance!', screen: 'The final whistle has blown and the scores are confirmed. Thanks for playing across the XP Play arena.', playerTitle: 'Full time!', player: 'A brilliant performance from start to finish.', symbol: '★' },
+  },
+  'pixel-cinema': {
+    name: 'Pixel Cinema', description: 'Velvet curtains, projector light and golden age movie magic.',
+    break: { kicker: 'INTERMISSION', title: 'Refreshments in the foyer', screen: 'The projector is paused while the audience takes a short break. The feature continues shortly.', playerTitle: 'Intermission', player: 'Keep this page open. The next scene will begin automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'ROLL CREDITS', title: 'What a picture!', screen: 'The house lights are up and the final scores are on screen. Thanks for starring in the show.', playerTitle: 'That’s a wrap!', player: 'You were part of a five-star performance.', symbol: '★' },
+  },
+  'world-tour': {
+    name: 'World Tour', description: 'Postcards, landmarks and colourful globe-trotting adventure.',
+    break: { kicker: 'NEXT STOP', title: 'Time for a quick layover', screen: 'Stretch your legs, check the map and meet us at the departure gate for the next round.', playerTitle: 'Quick layover', player: 'Keep this travel pass open. The tour resumes automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'JOURNEY COMPLETE', title: 'What a trip!', screen: 'The passports are stamped and the final scores have landed. Thanks for travelling with XP Play.', playerTitle: 'Journey complete!', player: 'You made it all the way around the quiz world.', symbol: '✦' },
+  },
+  'synthwave-festival': {
+    name: 'Synthwave Festival', description: 'Neon lasers, equaliser lights and a pulsing retro stage.',
+    break: { kicker: 'SET CHANGE', title: 'The next act is loading', screen: 'The lights are down while the stage resets. Grab a drink before the beat drops again.', playerTitle: 'Set change', player: 'Keep this page open. The Host will bring the next act on automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'ENCORE', title: 'One more cheer!', screen: 'The headline set is complete and the final scores are live. Thanks for lighting up XP Play.', playerTitle: 'What a show!', player: 'You brought festival energy to every round.', symbol: '✦' },
+  },
+  'deep-sea': {
+    name: 'Deep Sea Discovery', description: 'Glowing reefs, submarine windows and mysterious ocean depths.',
+    break: { kicker: 'SURFACE INTERVAL', title: 'Replenish your air', screen: 'The expedition is holding position. Refill your supplies before the next dive begins.', playerTitle: 'Surface interval', player: 'Keep this dive console open. The expedition resumes automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'EXPEDITION COMPLETE', title: 'A brilliant discovery!', screen: 'The crew has surfaced and the final scores are logged. Thanks for exploring with XP Play.', playerTitle: 'Dive complete!', player: 'Your discoveries are safely in the expedition log.', symbol: '◈' },
+  },
+  'detective-noir': {
+    name: 'Detective Noir', description: 'Rainy streets, desk lamps and a shadowy pixel mystery.',
+    break: { kicker: 'REVIEW THE CLUES', title: 'The trail has gone quiet', screen: 'The case is paused while the detectives compare notes. The investigation resumes shortly.', playerTitle: 'Case paused', player: 'Keep this evidence file open. The Host will reopen the case automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'CASE CLOSED', title: 'Mystery solved', screen: 'The evidence is in and the final scores reveal our sharpest detectives. Thanks for cracking the case.', playerTitle: 'Case closed!', player: 'Fine detective work. Your result is on the record.', symbol: '◆' },
   },
 }
 

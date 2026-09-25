@@ -193,8 +193,12 @@ export async function setHostAccountStatus(uid: string, status: 'active' | 'susp
  */
 export async function syncQuizLibrary(localQuizzes: QuizTemplate[], allowPopup = true): Promise<QuizTemplate[]> {
   const uid = await hostUid(allowPopup)
-  const snapshot = await getDocs(collection(hostDb, 'users', uid, 'quizzes'))
+  const [snapshot, deletionSnapshot] = await Promise.all([
+    getDocs(collection(hostDb, 'users', uid, 'quizzes')),
+    getDocs(collection(hostDb, 'users', uid, 'quizDeletions')),
+  ])
   const remote = snapshot.docs.map(item => item.data() as QuizTemplate)
+  const deletedAt = new Map(deletionSnapshot.docs.map(item => [item.id, Number(item.data().deletedAtMs || 0)]))
   // The original single-account collection is retained as a read-only migration
   // source for the administrator. It is never exposed to normal Hosts.
   const legacy = isApprovedAdmin(hostAuth().currentUser)
@@ -202,6 +206,7 @@ export async function syncQuizLibrary(localQuizzes: QuizTemplate[], allowPopup =
     : []
   const merged = new Map<string, QuizTemplate>()
   for (const quiz of [...legacy, ...remote, ...localQuizzes]) {
+    if ((deletedAt.get(quiz.id) || 0) >= Number(quiz.updatedAt || 0)) continue
     const current = merged.get(quiz.id)
     if (!current || quiz.updatedAt >= current.updatedAt) merged.set(quiz.id, serialise(quiz))
   }
@@ -220,7 +225,14 @@ export async function saveQuizTemplateCloud(quiz: QuizTemplate) {
 
 export async function deleteQuizTemplateCloud(id: string) {
   const uid = await hostUid(false)
-  await deleteDoc(doc(hostDb, 'users', uid, 'quizzes', id))
+  const batch = writeBatch(hostDb)
+  batch.set(doc(hostDb, 'users', uid, 'quizDeletions', id), { ownerUid: uid, deletedAtMs: Date.now() })
+  batch.delete(doc(hostDb, 'users', uid, 'quizzes', id))
+  // The administrator's original single-owner collection remains a migration
+  // source. Remove the matching legacy copy as well so sync cannot resurrect a
+  // deliberately deleted quiz on the next page load.
+  if (isApprovedAdmin(hostAuth().currentUser)) batch.delete(doc(hostDb, 'quizTemplates', id))
+  await batch.commit()
 }
 
 export async function listLiveSessions(): Promise<LiveSessionRecord[]> {
