@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { browserLocalPersistence, getAuth, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup, signOut, type Auth, type User } from 'firebase/auth'
-import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, type Unsubscribe } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, limit, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch, type Unsubscribe } from 'firebase/firestore'
 import { advanceGame, breakGame, resumeGame } from './gameEngine'
 import { currentQuestion, isLastQuestionInRound, type Game, type Player, type Response } from './model'
 import { publicGame } from './publicGame'
@@ -31,7 +31,16 @@ sessionStorage.setItem('quiz-host-controller-id', controllerId)
 
 type PublicDocument = { hostUid: string; controllerId: string; memberUids: string[]; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
 type PrivateDocument = { hostUid: string; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
-type HostCommand = { type: 'advance' | 'break' | 'resume' | 'void' | 'grade'; playerId?: string; points?: number }
+type HostCommand = { type: 'advance' | 'break' | 'resume' | 'void' | 'grade' | 'end'; playerId?: string; points?: number }
+export type LiveSessionRecord = {
+  code: string
+  ownerUid: string
+  title: string
+  status: 'active' | 'ended'
+  createdAt?: unknown
+  endedAt?: unknown
+  deleteAfterMs?: number
+}
 let liveHostCode: string | null = null
 let playerConnection: { code: string; uid: string; stop: () => void } | null = null
 const codeAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -62,12 +71,13 @@ function isApprovedAdmin(user: User | null) {
 }
 
 function requireGoogleUser(user: User | null) {
-  if (!user) throw new Error('Google sign-in did not complete. Try opening QuizForge in Chrome or Edge.')
+  if (!user) throw new Error('Google sign-in did not complete. Try opening XP Studio in Chrome or Edge.')
   if (!isGoogleUser(user)) throw new Error('Use a verified Google account to sign in to XP Studio.')
   return user
 }
 
 function hostCodeKey(uid: string) { return `quiz-live-host-code:${uid}` }
+const sessionRetentionMs = 24 * 60 * 60 * 1000
 
 function accountFrom(user: User, data: Partial<HostAccount>): HostAccount {
   return {
@@ -124,7 +134,13 @@ export async function hasHostSession() {
     code = localStorage.getItem('quiz-live-host-code')
     if (code) localStorage.setItem(hostCodeKey(account.uid), code)
   }
-  return Boolean(code)
+  if (!code) return false
+  const current = await getDoc(doc(hostDb, 'liveGames', code))
+  if (!current.exists() || current.data().game?.phase === 'closed-game') {
+    localStorage.removeItem(hostCodeKey(account.uid))
+    return false
+  }
+  return true
 }
 
 /**
@@ -150,7 +166,7 @@ async function hostUid(allowPopup = true) {
   // browser session briefly using claims from an older authentication state.
   await user.getIdToken(true)
   const account = await ensureHostAccount(user)
-  if (account.status !== 'active') throw new Error('This Host account is suspended. Contact the QuizForge administrator.')
+  if (account.status !== 'active') throw new Error('This Host account is suspended. Contact the XP Studio administrator.')
   return user.uid
 }
 
@@ -207,6 +223,45 @@ export async function deleteQuizTemplateCloud(id: string) {
   await deleteDoc(doc(hostDb, 'users', uid, 'quizzes', id))
 }
 
+export async function listLiveSessions(): Promise<LiveSessionRecord[]> {
+  const uid = await hostUid(false)
+  const snapshot = await getDocs(collection(hostDb, 'users', uid, 'sessions'))
+  return snapshot.docs.map(item => ({ code: item.id, ...item.data() } as LiveSessionRecord))
+    .sort((a, b) => (b.deleteAfterMs || Number.MAX_SAFE_INTEGER) - (a.deleteAfterMs || Number.MAX_SAFE_INTEGER))
+}
+
+async function deleteSessionCollection(code: string, name: 'private' | 'players' | 'responses' | 'results') {
+  while (true) {
+    const snapshot = await getDocs(query(collection(hostDb, 'liveGames', code, name), limit(200)))
+    if (snapshot.empty) return
+    const batch = writeBatch(hostDb)
+    snapshot.docs.forEach(item => batch.delete(item.ref))
+    await batch.commit()
+  }
+}
+
+/** Delete protected child records before the parent live-game document. */
+export async function deleteLiveSession(code: string) {
+  const uid = await hostUid(false)
+  const upper = code.trim().toUpperCase()
+  const publicRef = doc(hostDb, 'liveGames', upper)
+  const current = await getDoc(publicRef)
+  const ownerUid = current.exists() ? String(current.data().hostUid) : uid
+  if (current.exists() && ownerUid !== uid && !isApprovedAdmin(hostAuth().currentUser)) throw new Error('Only the session owner can delete this live game.')
+  for (const name of ['responses', 'results', 'players', 'private'] as const) await deleteSessionCollection(upper, name)
+  if (current.exists()) await deleteDoc(publicRef)
+  await deleteDoc(doc(hostDb, 'users', ownerUid, 'sessions', upper)).catch(() => undefined)
+  if (localStorage.getItem(hostCodeKey(uid)) === upper) localStorage.removeItem(hostCodeKey(uid))
+}
+
+/** Spark-plan cleanup: delete ended sessions on the first Studio visit after 24 hours. */
+export async function cleanupExpiredSessions() {
+  const sessions = await listLiveSessions()
+  const expired = sessions.filter(session => session.status === 'ended' && session.deleteAfterMs && session.deleteAfterMs <= Date.now())
+  for (const session of expired) await deleteLiveSession(session.code)
+  return expired.length
+}
+
 async function playerUid() {
   const auth = playerAuth()
   await setPersistence(auth, browserLocalPersistence)
@@ -234,13 +289,16 @@ export async function startLiveHost(onStatus: (message: string, canControl: bool
   const code = (fresh ? null : localStorage.getItem(hostCodeKey(uid))) || newGameCode()
   const publicRef = doc(hostDb, 'liveGames', code)
   const privateRef = doc(hostDb, 'liveGames', code, 'private', 'engine')
+  const sessionRef = doc(hostDb, 'users', uid, 'sessions', code)
   await runTransaction(hostDb, async tx => {
     const existing = await tx.get(publicRef)
     if (existing.exists()) {
       if (existing.data().hostUid !== uid) throw new Error('This code belongs to another Host.')
+      if (existing.data().game?.phase === 'closed-game') throw new Error('This session has ended. Start a new session for a fresh game code.')
       // A restored secondary Host tab is an observer until the GM explicitly
       // presses Take Control. User-initiated starts still claim control.
       if (claimControl && existing.data().controllerId !== controllerId) tx.update(publicRef, { controllerId })
+      tx.set(sessionRef, { code, ownerUid: uid, title: existing.data().game?.title || getGame().title, status: 'active' }, { merge: true })
       return
     }
     const initial: Game = serialise({ ...getGame(), code, phase: 'lobby', questionIndex: 0,
@@ -248,6 +306,7 @@ export async function startLiveHost(onStatus: (message: string, canControl: bool
       openedAt: undefined, closesAt: undefined, closedAt: undefined, returnPhase: undefined })
     tx.set(publicRef, { hostUid: uid, controllerId, memberUids: [], stateVersion: initial.stateVersion, game: serialise(publicGame(initial)) })
     tx.set(privateRef, { hostUid: uid, stateVersion: initial.stateVersion, game: initial })
+    tx.set(sessionRef, { code, ownerUid: uid, title: initial.title, status: 'active', createdAt: serverTimestamp() })
   })
   liveHostCode = code
   localStorage.setItem(hostCodeKey(uid), code)
@@ -317,9 +376,11 @@ export async function inspectAdminSession(): Promise<Game> {
 
 export async function liveHostCommand(expectedVersion: number, command: HostCommand) {
   if (!liveHostCode) throw new Error('Connect to the live game first.')
+  const uid = await hostUid(false)
   const code = liveHostCode
   const publicRef = doc(hostDb, 'liveGames', code)
   const privateRef = doc(hostDb, 'liveGames', code, 'private', 'engine')
+  const sessionRef = doc(hostDb, 'users', uid, 'sessions', code)
   const prior = getGame()
   const questionId = prior.questions[prior.questionIndex]?.id
   const playerSnapshot = await getDocs(collection(hostDb, 'liveGames', code, 'players'))
@@ -343,6 +404,15 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
     if (command.type === 'advance') next = advanceGame(base)
     else if (command.type === 'break') next = breakGame(base)
     else if (command.type === 'resume') next = resumeGame(base)
+    else if (command.type === 'end') {
+      next = structuredClone(base)
+      next.phase = 'closed-game'
+      next.returnPhase = undefined
+      next.openedAt = undefined
+      next.closesAt = undefined
+      next.closedAt = Date.now()
+      next.stateVersion += 1
+    }
     else if (command.type === 'grade' && command.playerId) {
       next = structuredClone(base)
       next.grades = next.grades.filter(g => !(g.playerId === command.playerId && g.questionId === questionId))
@@ -361,8 +431,17 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
     if (next === base) return
     next.responses = [] // submissions stay in their own protected records
     const data = { stateVersion: next.stateVersion, game: serialise(publicGame(next)) }
+    const ending = next.phase === 'closed-game' && base.phase !== 'closed-game'
+    const deleteAfterMs = Date.now() + sessionRetentionMs
     tx.update(privateRef, { stateVersion: next.stateVersion, game: serialise(next), ...(next.phase === 'open' && base.phase !== 'open' ? { openedAtServer: serverTimestamp() } : {}) })
-    tx.update(publicRef, { ...data, ...(next.phase === 'open' && base.phase !== 'open' ? { openedAtServer: serverTimestamp() } : {}) })
+    tx.update(publicRef, {
+      ...data,
+      ...(next.phase === 'open' && base.phase !== 'open' ? { openedAtServer: serverTimestamp() } : {}),
+      ...(ending ? { endedAt: serverTimestamp(), deleteAfterMs } : {}),
+    })
+    if (ending) {
+      tx.set(sessionRef, { code, ownerUid: uid, title: next.title, status: 'ended', endedAt: serverTimestamp(), deleteAfterMs }, { merge: true })
+    }
     if (next.phase === 'reveal' && (base.phase === 'closed' || command.type === 'grade')) {
       const question = currentQuestion(next)
       for (const player of next.players) {
@@ -381,6 +460,7 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
       }
     }
   })
+  if (command.type === 'end') localStorage.removeItem(hostCodeKey(uid))
 }
 
 export function followLiveScreen(code: string, onError: (message: string) => void, onConnected: () => void) {

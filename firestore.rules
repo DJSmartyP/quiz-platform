@@ -54,6 +54,13 @@ service cloud.firestore {
         allow update: if activeHost(uid) && resource.data.ownerUid == uid && request.resource.data.ownerUid == uid;
         allow delete: if activeHost(uid) && resource.data.ownerUid == uid;
       }
+
+      match /sessions/{code} {
+        allow get, list: if activeHost(uid) || isAdmin();
+        allow create: if activeHost(uid) && request.resource.data.ownerUid == uid && request.resource.data.code == code;
+        allow update: if activeHost(uid) && resource.data.ownerUid == uid && request.resource.data.ownerUid == uid && request.resource.data.code == code;
+        allow delete: if (activeHost(uid) && resource.data.ownerUid == uid) || isAdmin();
+      }
     }
 
     match /quizTemplates/{quizId} {
@@ -63,7 +70,8 @@ service cloud.firestore {
 
     match /liveGames/{code} {
       allow get: if true;
-      allow list, delete: if false;
+      allow list: if false;
+      allow delete: if isHost(code) || isAdmin();
       allow create: if activeHost(request.auth.uid) &&
         request.resource.data.keys().hasOnly(['hostUid', 'controllerId', 'memberUids', 'stateVersion', 'game']) &&
         request.resource.data.hostUid == request.auth.uid && request.resource.data.memberUids == [] &&
@@ -73,7 +81,7 @@ service cloud.firestore {
         request.resource.data.memberUids == resource.data.memberUids &&
         (
           (request.resource.data.stateVersion == resource.data.stateVersion + 1 &&
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stateVersion', 'game', 'openedAtServer'])) ||
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stateVersion', 'game', 'openedAtServer', 'endedAt', 'deleteAfterMs'])) ||
           (request.resource.data.stateVersion == resource.data.stateVersion &&
            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['controllerId']))
         )
@@ -84,6 +92,7 @@ service cloud.firestore {
         request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1 &&
         request.resource.data.memberUids.hasAll(resource.data.memberUids) &&
         request.resource.data.memberUids.hasAny([request.auth.uid]) &&
+        resource.data.game.phase != 'thanks' && resource.data.game.phase != 'closed-game' &&
         (resource.data.game.phase == 'lobby' || resource.data.game.allowLateJoins == true)
       );
 
@@ -95,7 +104,7 @@ service cloud.firestore {
         allow update: if isHost(code) && documentId == 'engine' &&
           request.resource.data.hostUid == resource.data.hostUid &&
           request.resource.data.stateVersion == resource.data.stateVersion + 1;
-        allow delete: if false;
+        allow delete: if isHost(code) || isAdmin();
       }
 
       match /players/{uid} {
@@ -106,7 +115,8 @@ service cloud.firestore {
           request.resource.data.name is string && request.resource.data.name.size() > 0 &&
           request.resource.data.name.size() <= 24 && request.resource.data.avatarId is string &&
           getAfter(/databases/$(database)/documents/liveGames/$(code)).data.memberUids.hasAny([uid]);
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if isHost(code) || isAdmin();
       }
 
       match /responses/{responseId} {
@@ -125,14 +135,15 @@ service cloud.firestore {
         allow get: if isHost(code) || (signedIn() && responseId.matches('^' + request.auth.uid + '_[^/]+$'));
         allow list: if isHost(code);
         allow create: if validSubmission();
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if isHost(code) || isAdmin();
       }
 
       match /results/{resultId} {
         allow get: if isHost(code) || (signedIn() && resultId.matches('^' + request.auth.uid + '_[^/]+$'));
         allow list: if isHost(code);
         allow create, update: if isHost(code);
-        allow delete: if false;
+        allow delete: if isHost(code) || isAdmin();
       }
     }
   }

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isAnswerComplete, sampleQuestions, scoreAnswer } from '../src/model.ts'
+import { currentTheme, isAnswerComplete, sampleQuestions, scoreAnswer } from '../src/model.ts'
 
 const question = type => sampleQuestions.find(item => item.type === type)
 
@@ -31,4 +31,18 @@ test('photo questions use text answers and standard scoring', () => {
   assert.equal(isAnswerComplete(reveal, 'Platypus'), true)
   assert.equal(scoreAnswer(reveal, ' platypus '), 1000)
   assert.equal(scoreAnswer(zoom, 'duck'), 0)
+})
+
+test('round themes override the quiz default only during that round', () => {
+  const game = {
+    theme: 'quiz-show',
+    roundThemes: { 'Picture round': 'neon-sci-fi' },
+    phase: 'question',
+    questionIndex: 0,
+    questions: [{ id: 'q1', round: 'Picture round', type: 'single', prompt: 'Question', options: ['A', 'B'], answer: 'A', points: 1000 }],
+  }
+  assert.equal(currentTheme(game), 'neon-sci-fi')
+  assert.equal(currentTheme({ ...game, phase: 'break' }), 'neon-sci-fi')
+  assert.equal(currentTheme({ ...game, phase: 'final' }), 'quiz-show')
+  assert.equal(currentTheme({ ...game, phase: 'lobby' }), 'quiz-show')
 })

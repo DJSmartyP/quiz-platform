@@ -6,7 +6,7 @@
     "providers": {
       "anonymous": true,
       "googleSignIn": {
-        "oAuthBrandDisplayName": "QuizForge",
+        "oAuthBrandDisplayName": "XP Studio",
         "supportEmail": "nickpatel.trainer@gmail.com"
       }
     }

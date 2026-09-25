@@ -1,13 +1,53 @@
 export type QuestionType = 'single' | 'multi' | 'boolean' | 'text' | 'free' | 'number' | 'closest' | 'ordering' | 'matching' | 'categorise' | 'list' | 'anagram' | 'photo-reveal' | 'photo-zoom'
 export type QuizTheme = 'quiz-show' | 'western' | 'neon-sci-fi' | 'arcane-fantasy' | 'monster-mash' | 'celebration'
 
-export const quizThemes: Record<QuizTheme, { name: string; description: string }> = {
-  'quiz-show': { name: 'Quiz Show', description: 'Marquee bulbs, spotlights and prime-time energy.' },
-  western: { name: 'Western', description: 'Timber, lanterns and a dramatic desert sunset.' },
-  'neon-sci-fi': { name: 'Neon Sci-Fi', description: 'Holograms, starfields and electric control panels.' },
-  'arcane-fantasy': { name: 'Arcane Fantasy', description: 'Crystals, spell books and moonlit magic.' },
-  'monster-mash': { name: 'Monster Mash', description: 'A playful haunted mansion full of glowing potions.' },
-  celebration: { name: 'Celebration', description: 'Balloons, confetti and a sparkling party stage.' },
+export type ThemeSceneCopy = {
+  kicker: string
+  title: string
+  screen: string
+  playerTitle: string
+  player: string
+  symbol: string
+}
+
+export type QuizThemeDefinition = {
+  name: string
+  description: string
+  break: ThemeSceneCopy
+  finale: ThemeSceneCopy
+}
+
+export const quizThemes: Record<QuizTheme, QuizThemeDefinition> = {
+  'quiz-show': {
+    name: 'Quiz Show', description: 'Marquee bulbs, spotlights and prime-time energy.',
+    break: { kicker: 'STUDIO INTERMISSION', title: "We'll be right back", screen: 'The studio is taking a quick breather. Grab a drink and stay tuned for the next round.', playerTitle: 'Stay tuned', player: 'Keep this page open. The Host will bring the show back automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: "THAT'S A WRAP", title: 'What a show!', screen: 'The final scores are in. Thanks for stepping into the XP Play spotlight.', playerTitle: 'Thanks for playing!', player: "You helped make tonight's show a hit.", symbol: '✦' },
+  },
+  western: {
+    name: 'Western', description: 'Timber, lanterns and a dramatic desert sunset.',
+    break: { kicker: 'TRAIL-SIDE BREAK', title: 'Rest your horses', screen: 'Water the horses, grab a refreshment and meet us back at the saloon for the next round.', playerTitle: 'Hold your horses', player: 'Keep this page open. The Host will call everyone back to the trail automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'HAPPY TRAILS', title: 'The final bell has rung', screen: 'The scores are settled. Thanks for riding into quiz night with us.', playerTitle: 'Fine quizzing, partner!', player: 'The trail ends here, but you made it one to remember.', symbol: '★' },
+  },
+  'neon-sci-fi': {
+    name: 'Neon Sci-Fi', description: 'Holograms, starfields and electric control panels.',
+    break: { kicker: 'SYSTEM PAUSE', title: 'Recharging the quiz core', screen: 'Power cells are cycling and the next round is loading. Stand by at your station.', playerTitle: 'Console on standby', player: 'Keep this console connected. Command will resume the mission automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'MISSION COMPLETE', title: 'Final transmission received', screen: 'The scores are locked in the star log. Thanks for joining the XP Play mission.', playerTitle: 'Mission accomplished!', player: 'Your final transmission has been recorded.', symbol: '◈' },
+  },
+  'arcane-fantasy': {
+    name: 'Arcane Fantasy', description: 'Crystals, spell books and moonlit magic.',
+    break: { kicker: 'ARCANE INTERMISSION', title: 'Restore your mana', screen: 'The quiz grimoire is resting. Refresh your potions before the next chapter begins.', playerTitle: 'The spell is paused', player: 'Keep this portal open. The Quizmaster will summon everyone back automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'QUEST COMPLETE', title: 'The final spell is cast', screen: 'The scores are sealed in the grimoire. Thank you, brave quizzers, for completing the quest.', playerTitle: 'Quest complete!', player: 'Your deeds will be remembered in the XP Play chronicles.', symbol: '✧' },
+  },
+  'monster-mash': {
+    name: 'Monster Mash', description: 'A playful haunted mansion full of glowing potions.',
+    break: { kicker: 'MIDNIGHT INTERMISSION', title: 'The monsters need a breather', screen: 'Refill your potion and stretch your claws. The next frightful round will begin shortly.', playerTitle: 'Rest your claws', player: "Keep this crypt open. The Host will wake the game automatically.", symbol: 'Ⅱ' },
+    finale: { kicker: 'DAWN HAS BROKEN', title: 'A frightfully good game!', screen: 'The final scores have crawled out of the crypt. Thanks for joining our monster mash.', playerTitle: 'You survived quiz night!', player: 'Thanks for making this a monstrously good game.', symbol: '☾' },
+  },
+  celebration: {
+    name: 'Celebration', description: 'Balloons, confetti and a sparkling party stage.',
+    break: { kicker: 'PARTY PAUSE', title: 'Refill and recharge', screen: 'Top up the snacks and save some energy. The next round of the party starts soon.', playerTitle: 'Party paused', player: 'Keep this page open. The Host will restart the celebration automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'GRAND FINALE', title: 'What a celebration!', screen: 'The confetti has fallen and the final scores are in. Thanks for bringing the party to XP Play.', playerTitle: 'Thanks for celebrating!', player: 'You brought brilliant energy to the game.', symbol: '★' },
+  },
 }
 
 export type Question = {
@@ -36,6 +76,7 @@ export type Game = {
   code: string
   title: string
   theme: QuizTheme
+  roundThemes?: Record<string, QuizTheme>
   phase: Phase
   returnPhase?: Phase
   questionIndex: number
@@ -140,6 +181,10 @@ export const freshGame = (): Game => ({
 
 export const normalise = (text: string) => text.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
 export const currentQuestion = (game: Game) => game.questions[game.questionIndex]
+export const currentTheme = (game: Game): QuizTheme => {
+  const roundPhase = ['round-intro', 'question', 'open', 'closed', 'reveal', 'scores', 'round-scores', 'leaderboard', 'break'].includes(game.phase)
+  return roundPhase ? game.roundThemes?.[currentQuestion(game)?.round] || game.theme || 'quiz-show' : game.theme || 'quiz-show'
+}
 export const isLastQuestionInRound = (game: Game) => game.questionIndex === game.questions.length - 1 || game.questions[game.questionIndex + 1]?.round !== currentQuestion(game)?.round
 export const roundPoints = (game: Game, playerId: string, round: string) => game.grades
   .filter(g => g.playerId === playerId && g.committed && game.questions.find(q => q.id === g.questionId)?.round === round)

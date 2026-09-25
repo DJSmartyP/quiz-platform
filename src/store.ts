@@ -18,21 +18,21 @@ let game: Game = (() => {
     return loaded
   } catch { return freshGame() }
 })()
-export type QuizTemplate = { id: string; title: string; theme: QuizTheme; questions: Question[]; builtIn?: boolean; updatedAt: number }
+export type QuizTemplate = { id: string; title: string; theme: QuizTheme; roundThemes?: Record<string, QuizTheme>; questions: Question[]; builtIn?: boolean; updatedAt: number }
 let quizLibrary: QuizTemplate[] = (() => {
   try {
     const loaded = JSON.parse(localStorage.getItem(libraryKey) || '') as QuizTemplate[]
     if (Array.isArray(loaded) && loaded.length) return loaded.map(quiz => ({ ...quiz, theme: quiz.theme || 'quiz-show' }))
   } catch { /* Migrate the existing single quiz below. */ }
-  return [{ id: 'quizforge-test', title: game.title, theme: game.theme, questions: structuredClone(game.questions), builtIn: true, updatedAt: Date.now() }]
+  return [{ id: 'quizforge-test', title: game.title, theme: game.theme, roundThemes: game.roundThemes, questions: structuredClone(game.questions), builtIn: true, updatedAt: Date.now() }]
 })()
 const canonicalTest = freshGame()
 const storedTest = quizLibrary.find(item => item.id === 'quizforge-test')
-const testTemplate: QuizTemplate = { id: 'quizforge-test', title: canonicalTest.title, theme: storedTest?.theme || canonicalTest.theme, questions: structuredClone(canonicalTest.questions), builtIn: true, updatedAt: storedTest?.updatedAt || Date.now() }
+const testTemplate: QuizTemplate = { id: 'quizforge-test', title: canonicalTest.title, theme: storedTest?.theme || canonicalTest.theme, roundThemes: storedTest?.roundThemes, questions: structuredClone(canonicalTest.questions), builtIn: true, updatedAt: storedTest?.updatedAt || Date.now() }
 quizLibrary = [testTemplate, ...quizLibrary.filter(item => item.id !== 'quizforge-test')]
 let activeQuizId = localStorage.getItem(activeQuizKey) || quizLibrary[0].id
 if (!quizLibrary.some(quiz => quiz.id === activeQuizId)) activeQuizId = quizLibrary[0].id
-if (activeQuizId === 'quizforge-test') game = { ...canonicalTest, theme: testTemplate.theme, code: game.code }
+if (activeQuizId === 'quizforge-test') game = { ...canonicalTest, theme: testTemplate.theme, roundThemes: testTemplate.roundThemes, code: game.code }
 let librarySnapshot = { quizzes: quizLibrary, activeQuizId }
 localStorage.setItem(libraryKey, JSON.stringify(quizLibrary))
 localStorage.setItem(activeQuizKey, activeQuizId)
@@ -61,8 +61,8 @@ function syncActiveQuiz(next: Game) {
   const index = quizLibrary.findIndex(quiz => quiz.id === activeQuizId)
   if (index < 0) return
   const current = quizLibrary[index]
-  if (current.title === next.title && current.theme === next.theme && JSON.stringify(current.questions) === JSON.stringify(next.questions)) return
-  quizLibrary = quizLibrary.map((quiz, quizIndex) => quizIndex === index ? { ...quiz, title: next.title, theme: next.theme, questions: structuredClone(next.questions), updatedAt: Date.now() } : quiz)
+  if (current.title === next.title && current.theme === next.theme && JSON.stringify(current.roundThemes || {}) === JSON.stringify(next.roundThemes || {}) && JSON.stringify(current.questions) === JSON.stringify(next.questions)) return
+  quizLibrary = quizLibrary.map((quiz, quizIndex) => quizIndex === index ? { ...quiz, title: next.title, theme: next.theme, roundThemes: structuredClone(next.roundThemes || {}), questions: structuredClone(next.questions), updatedAt: Date.now() } : quiz)
   persistLibrary()
   // An edited quiz must start a new live session. Reusing the previous code
   // would reconnect the Host to the old Firestore copy instead of these edits.
@@ -145,7 +145,7 @@ export function update(fn: (draft: Game) => void) {
   save(draft)
 }
 function gameFromQuiz(quiz: QuizTemplate): Game {
-  return { ...freshGame(), title: quiz.title, theme: quiz.theme || 'quiz-show', questions: structuredClone(quiz.questions), code: game.code }
+  return { ...freshGame(), title: quiz.title, theme: quiz.theme || 'quiz-show', roundThemes: structuredClone(quiz.roundThemes || {}), questions: structuredClone(quiz.questions), code: game.code }
 }
 export function createQuiz(title = 'Untitled Quiz') {
   if (liveRole) throw new Error('Leave the live session before changing quizzes.')
@@ -167,6 +167,7 @@ export function duplicateQuiz(id: string) {
     id: crypto.randomUUID(),
     title: `${source.title} copy`,
     theme: source.theme || 'quiz-show',
+    roundThemes: structuredClone(source.roundThemes || {}),
     questions: structuredClone(source.questions).map(question => ({ ...question, id: crypto.randomUUID() })),
     updatedAt: Date.now(),
   }
@@ -177,12 +178,13 @@ export function duplicateQuiz(id: string) {
   save(gameFromQuiz(quiz))
   return quiz
 }
-export function importQuiz(title: string, questions: Question[], theme: QuizTheme = 'quiz-show') {
+export function importQuiz(title: string, questions: Question[], theme: QuizTheme = 'quiz-show', roundThemes: Record<string, QuizTheme> = {}) {
   if (liveRole) throw new Error('Leave the live session before importing a quiz.')
   const quiz: QuizTemplate = {
     id: crypto.randomUUID(),
     title,
     theme,
+    roundThemes: structuredClone(roundThemes),
     questions: structuredClone(questions).map(question => ({ ...question, id: crypto.randomUUID() })),
     updatedAt: Date.now(),
   }
@@ -197,7 +199,7 @@ export function deleteQuiz(id: string) {
   if (liveRole) throw new Error('Leave the live session before changing quizzes.')
   const target = quizLibrary.find(item => item.id === id)
   if (!target) return
-  if (target.builtIn) throw new Error('The QuizForge test quiz is kept as a permanent example.')
+  if (target.builtIn) throw new Error('The XP Studio test quiz is kept as a permanent example.')
   quizLibrary = quizLibrary.filter(item => item.id !== id)
   if (activeQuizId === id) activeQuizId = quizLibrary[0].id
   clearLiveCode()
