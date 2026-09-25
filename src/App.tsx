@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { HashRouter, Link, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import { ArrowRight, Check, CircleHelp, Clock3, Copy, Download, Edit3, ExternalLink, Gamepad2, House, ImagePlus, LayoutDashboard, MonitorPlay, Play, Plus, ShieldCheck, Sparkles, Trash2, Trophy, Upload, Users } from 'lucide-react'
 import { anagramDisplay, currentQuestion, currentTheme, gradeFor, isAnswerComplete, quizThemes, ranked, rankedRound, responseFor, roundPoints, scrambleWord, typeInstructions, typeNames, type Game, type Player, type Question, type QuestionType, type QuizTheme } from './model'
-import { actionLabel, createQuiz, deleteQuiz, duplicateQuiz, expireAnswers, getActiveQuizTemplate, getLiveRole, importQuiz, leaveLiveRole, replaceQuizLibrary, scopeQuizWorkspace, selectQuiz, setQuizTheme, update, useGame, useQuizLibrary, type QuizTemplate } from './store'
+import { actionLabel, createQuiz, deleteQuiz, duplicateQuiz, expireAnswers, getActiveQuizTemplate, getLiveRole, getQuizLibrarySnapshot, importQuiz, leaveLiveRole, replaceQuizLibrary, scopeQuizWorkspace, selectQuiz, setQuizTheme, update, useGame, useQuizLibrary, type QuizTemplate } from './store'
 import { beginHostPopup, cleanupExpiredSessions, deleteLiveSession, deleteQuizTemplateCloud, followLiveScreen, hasHostSession, joinLiveGame, liveHostCommand, reconnectLivePlayer, restoreHostAccount, saveQuizTemplateCloud, signOutHost, startLiveHost, submitLiveAnswer, syncQuizLibrary, takeLiveControl, type HostAccount } from './live'
 import { answerLabel, type OwnResult } from './reveal'
 import QRCode from 'qrcode'
@@ -166,19 +166,23 @@ const HostAccountContext = createContext<HostAccount | null>(null)
 function HostGate({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
   const [account, setAccount] = useState<HostAccount | null | undefined>(undefined)
   const [error, setError] = useState('')
-  const prepare = (next: HostAccount | null) => {
+  const prepare = async (next: HostAccount | null) => {
     if (next) scopeQuizWorkspace(next.uid, next.role === 'admin')
-    if (next?.status === 'active') void cleanupExpiredSessions().catch(error => console.warn('Expired session cleanup could not run.', error))
+    if (next?.status === 'active') {
+      try { replaceQuizLibrary(await syncQuizLibrary(getQuizLibrarySnapshot().quizzes, false)) }
+      catch (cause) { console.warn('Cloud quiz library could not be loaded.', cause) }
+      void cleanupExpiredSessions().catch(error => console.warn('Expired session cleanup could not run.', error))
+    }
     setAccount(next)
   }
   useEffect(() => {
     let active = true
-    void restoreHostAccount().then(next => { if (active) prepare(next) }).catch(cause => { if (active) { setError((cause as Error).message); setAccount(null) } })
+    void restoreHostAccount().then(next => { if (active) void prepare(next) }).catch(cause => { if (active) { setError((cause as Error).message); setAccount(null) } })
     return () => { active = false }
   }, [])
   const signIn = async () => {
     setError('')
-    try { prepare(await beginHostPopup()) }
+    try { await prepare(await beginHostPopup()) }
     catch (cause) { setError(friendlyAuthError(cause)) }
   }
   if (account === undefined) return <div className="account-gate"><Logo/><div className="account-card"><span className="account-kicker">XP STUDIO</span><h1>Opening your Host workspace…</h1><p>Checking your saved Google sign-in.</p></div></div>
@@ -378,7 +382,13 @@ function Organiser() {
   // The initial browser cache is intentionally captured once, then Firestore is authoritative.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const makeQuiz = () => { createQuiz(); nav('/editor') }
+  const makeQuiz = async () => {
+    createQuiz()
+    const quiz = getActiveQuizTemplate()
+    try { if (quiz) await saveQuizTemplateCloud(quiz) }
+    catch (error) { setCloudStatus(`New quiz saved in this browser; cloud sync failed: ${(error as Error).message}`) }
+    nav('/editor')
+  }
   const openQuiz = (id: string, destination: '/editor' | '/host') => { if (id !== library.activeQuizId) selectQuiz(id); nav(destination) }
   const copyQuiz = async (id: string) => {
     const quiz = duplicateQuiz(id)
@@ -419,7 +429,7 @@ function Organiser() {
     finally { setCloudBusy(false); if (importInput.current) importInput.current.value = '' }
   }
   return <Shell active="Overview"><main className="page">
-    <div className="page-heading"><div><div className="eyebrow dark">ORGANISER WORKSPACE</div><h1>Good evening, quizmaster.</h1><p>Start from scratch, or use the protected XP Studio test pack for a connection check.</p><span className={`cloud-status ${cloudStatus==='Cloud library synced'?'ready':''}`}><ShieldCheck size={14}/>{cloudStatus}</span></div><div className="host-head-actions"><input ref={importInput} hidden type="file" accept=".json,.xpstudio.json,.quizforge.json,application/json" onChange={event=>void importQuizPack(event.target.files?.[0])}/><Button variant="secondary" onClick={()=>importInput.current?.click()} disabled={cloudBusy}><Upload size={17}/> Import quiz pack</Button><Button onClick={makeQuiz}><Plus size={18}/> Start new quiz</Button></div></div>
+    <div className="page-heading"><div><div className="eyebrow dark">ORGANISER WORKSPACE</div><h1>Good evening, quizmaster.</h1><p>Start from scratch, or use the protected XP Studio test pack for a connection check.</p><span className={`cloud-status ${cloudStatus==='Cloud library synced'?'ready':''}`}><ShieldCheck size={14}/>{cloudStatus}</span></div><div className="host-head-actions"><input ref={importInput} hidden type="file" accept=".json,.xpstudio.json,.quizforge.json,application/json" onChange={event=>void importQuizPack(event.target.files?.[0])}/><Button variant="secondary" onClick={()=>importInput.current?.click()} disabled={cloudBusy}><Upload size={17}/> Import quiz pack</Button><Button onClick={()=>void makeQuiz()}><Plus size={18}/> Start new quiz</Button></div></div>
     <div className="stats-grid"><div className="stat"><span>QUIZZES</span><strong>{library.quizzes.length}</strong><small>Private cloud library</small></div><div className="stat"><span>ACTIVE QUIZ</span><strong>{game.phase === 'lobby' ? 'Ready' : 'Live'}</strong><small>{game.title}</small></div><div className="stat"><span>PLAYERS</span><strong>{game.players.length}</strong><small>In this session</small></div></div>
     <div className="section-title"><h2>Quiz library</h2><span>{library.quizzes.length} {library.quizzes.length === 1 ? 'quiz' : 'quizzes'}</span></div>
     <div className="quiz-library">{library.quizzes.map(quiz => {
@@ -437,7 +447,14 @@ function Editor() {
   useEffect(() => { setTitleDraft(game.title); setThemeDraft(game.theme || 'quiz-show') }, [game.title, game.theme])
   useEffect(() => { setRoundThemeDraft(game.roundThemes?.[game.questions[selected]?.round] || '') }, [selected, game.questions, game.roundThemes])
   const activeTemplate = library.quizzes.find(quiz => quiz.id === library.activeQuizId)
-  if (activeTemplate?.builtIn) return <Shell active="Quiz editor"><main className="page editor-page"><div className="page-heading"><div><div className="eyebrow dark">QUIZ EDITOR</div><h1>{game.title}</h1><p>The built-in test quiz stays unchanged so it is always available for connection tests.</p></div></div><div className="editor-locked"><ShieldCheck size={34}/><h2>Keep the test quiz as your baseline</h2><p>Create an editable copy containing all {game.questions.length} existing questions, then change its title, rounds, formats and answers.</p><Button onClick={()=>{duplicateQuiz(activeTemplate.id);nav('/editor')}}><Copy size={17}/> Copy test quiz to edit</Button></div></main></Shell>
+  const copyStarter = async () => {
+    if (!activeTemplate) return
+    const quiz = duplicateQuiz(activeTemplate.id)
+    try { await saveQuizTemplateCloud(quiz) }
+    catch (error) { setValidation(`Copy saved in this browser, but cloud sync failed: ${(error as Error).message}`) }
+    nav('/editor')
+  }
+  if (activeTemplate?.builtIn) return <Shell active="Quiz editor"><main className="page editor-page"><div className="page-heading"><div><div className="eyebrow dark">QUIZ EDITOR</div><h1>{game.title}</h1><p>The built-in test quiz stays unchanged so it is always available for connection tests.</p></div></div><div className="editor-locked"><ShieldCheck size={34}/><h2>Keep the test quiz as your baseline</h2><p>Create an editable copy containing all {game.questions.length} existing questions, then change its title, rounds, formats and answers.</p><Button onClick={()=>void copyStarter()}><Copy size={17}/> Copy test quiz to edit</Button></div></main></Shell>
   if (!draft) return null
   const roundNames = [...new Set(game.questions.map(question => question.round))]
   const originalRound = game.questions[selected]?.round || draft.round

@@ -112,6 +112,7 @@ export function scopeQuizWorkspace(uid: string, migrateLegacy = false) {
 export function useGame() { return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb) }, () => game) }
 export function useQuizLibrary() { return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb) }, () => librarySnapshot) }
 export function getGame() { return game }
+export function getQuizLibrarySnapshot() { return librarySnapshot }
 export function getActiveQuizTemplate() { return quizLibrary.find(item => item.id === activeQuizId) }
 export function getLiveRole() { return liveRole }
 export function leaveLiveRole(role?: 'host' | 'player' | 'screen') {
