@@ -81,6 +81,17 @@ test('public state withholds future questions, answer keys and private submissio
   assert.equal(revealed.questions[1].answer, undefined)
 })
 
+test('public state releases only the active anagram target needed for timed solving', () => {
+  const game = base()
+  game.phase = 'open'
+  game.questions[0] = { ...game.questions[0], type: 'anagram', answer: 'Platypus', scramble: 'YPLUTAPS', scoreMode: 'time' }
+  const view = publicGame(game)
+  assert.equal(view.questions[0].answer, undefined)
+  assert.equal(view.questions[0].anagramSolution, 'Platypus')
+  assert.equal(view.questions[0].scoreMode, 'time')
+  assert.equal(view.questions[1].anagramSolution, undefined)
+})
+
 test('own reveal distinguishes right, wrong, partial and unmarked answers', () => {
   const q = question('q1', 'Round 1')
   const response = value => ({ playerId: 'a', questionId: 'q1', value, submittedAt: 3000 })
@@ -91,7 +102,9 @@ test('own reveal distinguishes right, wrong, partial and unmarked answers', () =
   assert.deepEqual(resultForAnswer(manual, response('A creative reply'), undefined, [], 1000), { points: 0, verdict: 'pending' })
   assert.deepEqual(resultForAnswer(manual, response('A creative reply'), { points: 500 }, [], 1000), { points: 500, verdict: 'partial' })
   const anagram = { ...q, type: 'anagram', answer: 'Platypus' }
-  assert.deepEqual(resultForAnswer(anagram, response('platypus'), undefined, [], -28000), { points: 0, verdict: 'correct' })
+  assert.deepEqual(resultForAnswer(anagram, response('platypus'), undefined, [], -27000), { points: 500, verdict: 'correct' })
+  const speed = { ...q, scoreMode: 'time' }
+  assert.deepEqual(resultForAnswer(speed, response('Mars'), undefined, [], -27000), { points: 500, verdict: 'correct' })
   assert.equal(answerLabel({ France: 'Paris', Italy: 'Rome' }), 'France → Paris · Italy → Rome')
 })
 

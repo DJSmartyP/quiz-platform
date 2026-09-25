@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app'
 import { browserLocalPersistence, getAuth, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup, signOut, type Auth, type User } from 'firebase/auth'
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, limit, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch, type Unsubscribe } from 'firebase/firestore'
 import { advanceGame, breakGame, resumeGame } from './gameEngine'
-import { currentQuestion, isLastQuestionInRound, type Game, type Player, type Response } from './model'
+import { currentQuestion, isLastQuestionInRound, timeScaledPoints, type Game, type Player, type Response } from './model'
 import { publicGame } from './publicGame'
 import { resultForAnswer, type OwnResult } from './reveal'
 import { getGame, receiveLiveGame, receiveOwnLiveResponse, type QuizTemplate } from './store'
@@ -55,6 +55,18 @@ export type HostAccount = {
   createdAt?: unknown
   updatedAt?: unknown
   lastLoginAt?: unknown
+}
+export type AdminQuizRecord = {
+  id: string
+  ownerUid: string
+  ownerName: string
+  ownerEmail: string
+  title: string
+  theme: string
+  questionCount: number
+  roundCount: number
+  updatedAt: number
+  builtIn: boolean
 }
 function newGameCode() {
   const values = crypto.getRandomValues(new Uint8Array(6))
@@ -180,6 +192,32 @@ export async function listHostAccounts(): Promise<HostAccount[]> {
   const snapshot = await getDocs(collection(hostDb, 'users'))
   return snapshot.docs.map(item => ({ uid: item.id, ...item.data() } as HostAccount))
     .sort((a, b) => a.role === b.role ? a.displayName.localeCompare(b.displayName) : a.role === 'admin' ? -1 : 1)
+}
+
+/** Read-only platform inventory for the sole administrator. */
+export async function listAdminQuizzes(accounts?: HostAccount[]): Promise<AdminQuizRecord[]> {
+  if (!await hasAdminSession()) throw new Error('Administrator access is required.')
+  const hosts = accounts || await listHostAccounts()
+  const libraries = await Promise.all(hosts.map(async account => {
+    const snapshot = await getDocs(collection(hostDb, 'users', account.uid, 'quizzes'))
+    return snapshot.docs.map(item => {
+      const quiz = item.data() as Partial<QuizTemplate>
+      const questions = Array.isArray(quiz.questions) ? quiz.questions : []
+      return {
+        id: item.id,
+        ownerUid: account.uid,
+        ownerName: account.displayName || 'Quiz Host',
+        ownerEmail: account.email,
+        title: quiz.title || 'Untitled quiz',
+        theme: quiz.theme || 'quiz-show',
+        questionCount: questions.length,
+        roundCount: new Set(questions.map(question => question.round)).size,
+        updatedAt: Number(quiz.updatedAt || 0),
+        builtIn: Boolean(quiz.builtIn),
+      } satisfies AdminQuizRecord
+    })
+  }))
+  return libraries.flat().sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title))
 }
 
 export async function setHostAccountStatus(uid: string, status: 'active' | 'suspended') {
@@ -427,8 +465,12 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
     }
     else if (command.type === 'grade' && command.playerId) {
       next = structuredClone(base)
+      const question = currentQuestion(next)
+      const response = responses.find(item => item.playerId === command.playerId && item.questionId === questionId)
+      const elapsed = response ? (response.submittedAt - (next.openedAt || response.submittedAt)) / 1000 : 0
+      const points = timeScaledPoints(question, Math.max(0, Math.round(command.points || 0)), elapsed)
       next.grades = next.grades.filter(g => !(g.playerId === command.playerId && g.questionId === questionId))
-      next.grades.push({ playerId: command.playerId, questionId, points: Math.max(0, Math.round(command.points || 0)), committed: false })
+      next.grades.push({ playerId: command.playerId, questionId, points, committed: false })
       next.stateVersion += 1
     } else if (command.type === 'void') {
       next = structuredClone(base)

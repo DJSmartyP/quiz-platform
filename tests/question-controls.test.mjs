@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { currentTheme, isAnswerComplete, sampleQuestions, scoreAnswer } from '../src/model.ts'
+import { anagramDisplay, currentTheme, isAnswerComplete, sampleQuestions, scoreAnswer, timeScaledPoints } from '../src/model.ts'
 
 const question = type => sampleQuestions.find(item => item.type === type)
 
@@ -31,6 +31,39 @@ test('photo questions use text answers and standard scoring', () => {
   assert.equal(isAnswerComplete(reveal, 'Platypus'), true)
   assert.equal(scoreAnswer(reveal, ' platypus '), 1000)
   assert.equal(scoreAnswer(zoom, 'duck'), 0)
+})
+
+test('fixed and speed scoring apply consistently across question formats', () => {
+  const fixed = { id: 'fixed', round: 'Round', type: 'single', prompt: 'Pick', options: ['A', 'B'], answer: 'A', points: 1000, duration: 30, scoreMode: 'fixed' }
+  const speed = { ...fixed, id: 'speed', scoreMode: 'time' }
+  assert.equal(scoreAnswer(fixed, 'A', 29), 1000)
+  assert.equal(scoreAnswer(speed, 'A', 0), 1000)
+  assert.equal(scoreAnswer(speed, 'A', 15), 750)
+  assert.equal(scoreAnswer(speed, 'A', 30), 500)
+  assert.equal(scoreAnswer(speed, 'B', 0), 0)
+  assert.equal(timeScaledPoints({ ...question('matching'), scoreMode: 'time', duration: 20 }, 600, 10), 450)
+})
+
+test('anagram waits five seconds then solves deterministic random positions', () => {
+  const answer = 'PLATYPUS'
+  const scramble = 'YPLUTAPS'
+  const atStart = anagramDisplay(answer, scramble, 0, 30)
+  const atFive = anagramDisplay(answer, scramble, 5, 30)
+  const midway = anagramDisplay(answer, scramble, 18, 30)
+  const repeated = anagramDisplay(answer, scramble, 18, 30)
+  const complete = anagramDisplay(answer, scramble, 30, 30)
+  assert.equal(atStart.lockedCount, 0)
+  assert.equal(atFive.lockedCount, 0)
+  assert.ok(midway.lockedCount > 0 && midway.lockedCount < answer.length)
+  assert.deepEqual(midway.lockedPositions, repeated.lockedPositions)
+  assert.notDeepEqual(midway.lockedPositions, [...midway.lockedPositions].sort((a, b) => a - b))
+  assert.equal(complete.text, answer)
+  assert.equal(complete.lockedCount, answer.length)
+})
+
+test('photo reveal overlay becomes transparent as tiles disappear', async () => {
+  const css = await import('node:fs/promises').then(({ readFile }) => readFile(new URL('../src/brand.css', import.meta.url), 'utf8'))
+  assert.match(css, /\.photo-cover\{[^}]*background:transparent/)
 })
 
 test('round themes override the quiz default only during that round', () => {

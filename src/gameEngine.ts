@@ -1,4 +1,4 @@
-import { currentQuestion, isLastQuestionInRound, scoreAnswer, type Game } from './model.ts'
+import { currentQuestion, isLastQuestionInRound, scoreAnswer, timeScaledPoints, type Game } from './model.ts'
 
 /** One deterministic Host transition. A Firestore transaction checks the expected version first. */
 export function advanceGame(previous: Game): Game {
@@ -23,7 +23,8 @@ export function advanceGame(previous: Game): Game {
       if (existing?.committed) continue
       const response = next.responses.find(r => r.playerId === player.id && r.questionId === q.id)
       let points = existing?.points ?? (response ? scoreAnswer(q, response.value, (response.submittedAt - (next.openedAt || response.submittedAt)) / 1000) : 0)
-      if (q.type === 'closest') points = response && Math.abs(Number(response.value) - Number(q.answer)) === closestDistance ? q.points : 0
+      if (q.type === 'closest') points = response && Math.abs(Number(response.value) - Number(q.answer)) === closestDistance
+        ? timeScaledPoints(q, q.points, (response.submittedAt - (next.openedAt || response.submittedAt)) / 1000) : 0
       if (existing) { existing.points = points; existing.committed = true }
       else next.grades.push({ playerId: player.id, questionId: q.id, points, committed: true })
       player.score += points

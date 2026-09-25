@@ -1,4 +1,5 @@
 export type QuestionType = 'single' | 'multi' | 'boolean' | 'text' | 'free' | 'number' | 'closest' | 'ordering' | 'matching' | 'categorise' | 'list' | 'anagram' | 'photo-reveal' | 'photo-zoom'
+export type ScoreMode = 'fixed' | 'time'
 export type QuizTheme = 'quiz-show' | 'western' | 'neon-sci-fi' | 'arcane-fantasy' | 'monster-mash' | 'celebration' | 'retro-sports' | 'pixel-cinema' | 'world-tour' | 'synthwave-festival' | 'deep-sea' | 'detective-noir'
 
 export type ThemeSceneCopy = {
@@ -86,6 +87,7 @@ export type Question = {
   round: string
   prompt: string
   points: number
+  scoreMode?: ScoreMode
   duration?: number
   options?: string[]
   items?: string[]
@@ -94,6 +96,7 @@ export type Question = {
   tolerance?: number
   explanation?: string
   scramble?: string
+  anagramSolution?: string
   imageUrl?: string
   imageAlt?: string
 }
@@ -163,18 +166,38 @@ export function scrambleWord(answer: string): string {
   })
 }
 
+function seededOrder(positions: number[], seedText: string) {
+  let seed = 2166136261
+  for (const char of seedText) seed = Math.imul(seed ^ char.charCodeAt(0), 16777619)
+  const ordered = [...positions]
+  for (let index = ordered.length - 1; index > 0; index -= 1) {
+    seed += 0x6d2b79f5
+    let value = seed
+    value = Math.imul(value ^ value >>> 15, value | 1)
+    value ^= value + Math.imul(value ^ value >>> 7, value | 61)
+    const random = ((value ^ value >>> 14) >>> 0) / 4294967296
+    const swapIndex = Math.floor(random * (index + 1))
+    ;[ordered[index], ordered[swapIndex]] = [ordered[swapIndex], ordered[index]]
+  }
+  return ordered
+}
+
 export function anagramDisplay(answer: string, scramble: string, elapsedSeconds: number, duration: number) {
   const source = answer.toUpperCase()
   const positions = [...source].map((char, index) => /[A-Z]/.test(char) ? index : -1).filter(index => index >= 0)
-  const progress = Math.min(1, Math.max(0, elapsedSeconds / Math.max(duration, 1)))
-  const lockedCount = Math.min(Math.max(0, positions.length - 2), Math.floor(progress * positions.length))
+  const solveOrder = seededOrder(positions, `${source}|${scramble.toUpperCase()}`)
+  const progress = Math.min(1, Math.max(0, (elapsedSeconds - 5) / Math.max(1, duration - 5)))
+  const lockedCount = Math.min(positions.length, Math.floor(progress * positions.length))
+  const lockedPositions = solveOrder.slice(0, lockedCount)
+  const locked = new Set(lockedPositions)
   const remaining = [...scramble.toUpperCase()].filter(char => /[A-Z]/.test(char))
   const display = [...source]
-  for (const index of positions.slice(0, lockedCount)) {
+  for (const index of lockedPositions) {
     const removeAt = remaining.indexOf(source[index])
     if (removeAt >= 0) remaining.splice(removeAt, 1)
   }
-  const expectedRemaining = positions.slice(lockedCount).map(index => source[index]).join('')
+  const unlockedPositions = positions.filter(index => !locked.has(index))
+  const expectedRemaining = unlockedPositions.map(index => source[index]).join('')
   if (remaining.join('') === expectedRemaining) {
     const swapAt = remaining.findIndex(letter => letter !== remaining[0])
     if (swapAt > 0) {
@@ -184,8 +207,8 @@ export function anagramDisplay(answer: string, scramble: string, elapsedSeconds:
     }
   }
   let cursor = 0
-  for (const index of positions.slice(lockedCount)) display[index] = remaining[cursor++] || source[index]
-  return { text: display.join(''), lockedCount, positions }
+  for (const index of unlockedPositions) display[index] = remaining[cursor++] || source[index]
+  return { text: display.join(''), lockedCount, lockedPositions, positions }
 }
 
 export const sampleQuestions: Question[] = [
@@ -200,7 +223,7 @@ export const sampleQuestions: Question[] = [
   { id: 'q9', round: 'ROUND 2 · THINK FAST', type: 'matching', prompt: 'Match each country to its capital.', items: ['France', 'Italy', 'Spain'], options: ['Paris', 'Rome', 'Madrid'], answer: { France: 'Paris', Italy: 'Rome', Spain: 'Madrid' }, points: 1200, duration: 45 },
   { id: 'q10', round: 'ROUND 2 · THINK FAST', type: 'categorise', prompt: 'Sort these into the right category.', items: ['Apple', 'Carrot', 'Banana', 'Pea'], categories: ['Fruit', 'Vegetable'], answer: { Apple: 'Fruit', Carrot: 'Vegetable', Banana: 'Fruit', Pea: 'Vegetable' }, points: 1200, duration: 45 },
   { id: 'q11', round: 'ROUND 2 · THINK FAST', type: 'list', prompt: 'Name the three primary colours of light.', answer: ['Red', 'Green', 'Blue'], points: 1200, duration: 45 },
-  { id: 'q12', round: 'ROUND 2 · THINK FAST', type: 'anagram', prompt: 'Unscramble the word.', answer: 'Platypus', points: 1000, duration: 30 },
+  { id: 'q12', round: 'ROUND 2 · THINK FAST', type: 'anagram', prompt: 'Unscramble the word.', answer: 'Platypus', points: 1000, scoreMode: 'time', duration: 30 },
 ]
 
 export const freshGame = (): Game => ({
@@ -240,46 +263,52 @@ export function isAnswerComplete(q: Question, answer: unknown): boolean {
   return typeof answer === 'string' ? Boolean(answer.trim()) : answer !== undefined && answer !== null
 }
 
+export const effectiveScoreMode = (q: Question): ScoreMode => q.scoreMode || (q.type === 'anagram' ? 'time' : 'fixed')
+
+/** Speed scoring awards the full value immediately and half the value at the buzzer. */
+export function timeScaledPoints(q: Question, earnedPoints: number, elapsedSeconds = 0): number {
+  if (earnedPoints <= 0 || effectiveScoreMode(q) === 'fixed') return Math.max(0, Math.round(earnedPoints))
+  const duration = Math.max(1, q.duration ?? 30)
+  const elapsed = Math.min(duration, Math.max(0, elapsedSeconds))
+  return Math.max(0, Math.round(earnedPoints * (1 - elapsed / duration * 0.5)))
+}
+
 export function scoreAnswer(q: Question, value: unknown, elapsedSeconds = 0): number {
   if (value === undefined || value === null || value === '') return 0
   const full = q.points
+  const award = (points: number) => timeScaledPoints(q, points, elapsedSeconds)
   switch (q.type) {
-    case 'single': return value === q.answer ? full : 0
-    case 'boolean': return value === q.answer ? full : 0
+    case 'single': return value === q.answer ? award(full) : 0
+    case 'boolean': return value === q.answer ? award(full) : 0
     case 'multi': {
       const correct = (q.answer as string[] || []).map(normalise).sort().join('|')
       const given = (Array.isArray(value) ? value : []).map(String).map(normalise).sort().join('|')
-      return given === correct ? full : 0
+      return given === correct ? award(full) : 0
     }
     case 'text': {
       const accepted = Array.isArray(q.answer) ? q.answer : [q.answer]
-      return accepted.some(a => normalise(String(a)) === normalise(String(value))) ? full : 0
+      return accepted.some(a => normalise(String(a)) === normalise(String(value))) ? award(full) : 0
     }
     case 'photo-reveal':
     case 'photo-zoom': {
       const accepted = Array.isArray(q.answer) ? q.answer : [q.answer]
-      return accepted.some(a => normalise(String(a)) === normalise(String(value))) ? full : 0
+      return accepted.some(a => normalise(String(a)) === normalise(String(value))) ? award(full) : 0
     }
-    case 'number': return Math.abs(Number(value) - Number(q.answer)) <= (q.tolerance ?? 0) ? full : 0
-    case 'ordering': return JSON.stringify(value) === JSON.stringify(q.answer) ? full : 0
+    case 'number': return Math.abs(Number(value) - Number(q.answer)) <= (q.tolerance ?? 0) ? award(full) : 0
+    case 'ordering': return JSON.stringify(value) === JSON.stringify(q.answer) ? award(full) : 0
     case 'matching':
     case 'categorise': {
       const answer = q.answer as Record<string, string>
       const given = value as Record<string, string>
       const keys = Object.keys(answer)
-      return Math.round(full * keys.filter(k => given?.[k] === answer[k]).length / keys.length)
+      return award(Math.round(full * keys.filter(k => given?.[k] === answer[k]).length / keys.length))
     }
     case 'list': {
       const expected = (q.answer as string[]).map(normalise)
       const supplied = new Set((Array.isArray(value) ? value : []).map(String).map(normalise))
-      return Math.round(full * expected.filter(a => supplied.has(a)).length / expected.length)
+      return award(Math.round(full * expected.filter(a => supplied.has(a)).length / expected.length))
     }
-    case 'anagram': {
-      if (normalise(String(value)) !== normalise(String(q.answer))) return 0
-      const duration = q.duration ?? 30
-      if (elapsedSeconds <= 5) return full
-      return Math.max(0, Math.round(full * (duration - elapsedSeconds) / (duration - 5)))
-    }
+    case 'anagram': return normalise(String(value)) === normalise(String(q.answer)) ? award(full) : 0
     case 'closest':
     case 'free': return 0
   }

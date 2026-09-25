@@ -49,7 +49,7 @@ service cloud.firestore {
       allow delete: if false;
 
       match /quizzes/{quizId} {
-        allow get, list: if activeHost(uid);
+        allow get, list: if activeHost(uid) || isAdmin();
         allow create: if activeHost(uid) && request.resource.data.ownerUid == uid;
         allow update: if activeHost(uid) && resource.data.ownerUid == uid && request.resource.data.ownerUid == uid;
         allow delete: if activeHost(uid) && resource.data.ownerUid == uid;
