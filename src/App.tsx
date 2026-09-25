@@ -23,7 +23,6 @@ const themeSurfaceStyle = (theme: QuizTheme | undefined) => {
   const id = theme || 'quiz-show'
   return {
     '--theme-background': `url("${asset(`themes/${id}/background.webp`)}")`,
-    '--theme-frame': `url("${asset(`themes/${id}/frame.webp`)}")`,
     '--theme-break': `url("${asset(`themes/${id}/break.webp`)}")`,
     '--theme-thanks': `url("${asset(`themes/${id}/thanks.webp`)}")`,
   } as React.CSSProperties
@@ -59,8 +58,7 @@ function usePacks() {
 function ProductLogo({ mode, compact = false, linked = false }: { mode: 'studio' | 'play'; compact?: boolean; linked?: boolean }) {
   const label = mode === 'studio' ? 'XP Studio' : 'XP Play'
   const logo = <span className={`xp-logo xp-logo-${mode} ${compact ? 'compact' : ''}`} aria-label={label}>
-    <span className="xp-logo-icon" aria-hidden="true"><img src={asset(`brand/xp-${mode}-icon.png`)} alt=""/></span>
-    <span className="xp-logo-type"><b>XP</b><strong>{mode === 'studio' ? 'STUDIO' : 'PLAY'}</strong><small>BY SHARED XP</small></span>
+    <img className="xp-logo-image" src={asset(`brand/xp-${mode}-logo.png`)} alt={label}/>
   </span>
   return linked ? <Link className="brand" to="/" aria-label="XP Studio home">{logo}</Link> : logo
 }
