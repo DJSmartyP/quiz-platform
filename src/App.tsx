@@ -139,7 +139,7 @@ function validateQuestionDraft(question: Question) {
   if (['photo-reveal', 'photo-zoom'].includes(question.type) && !String(question.answer || '').trim()) return 'Enter the correct photo answer.'
   return ''
 }
-function readQuizPack(text: string): { title: string; theme: QuizTheme; roundThemes: Record<string, QuizTheme>; questions: Question[] } {
+function readQuizPack(text: string): { title: string; theme: QuizTheme; introTheme: QuizTheme; exitTheme: QuizTheme; roundThemes: Record<string, QuizTheme>; questions: Question[] } {
   if (text.length > 900_000) throw new Error('This quiz pack is too large to store safely.')
   const parsed = JSON.parse(text) as Record<string, unknown>
   const source = ['quizforge-pack', 'xp-studio-pack'].includes(String(parsed?.format)) ? parsed.quiz as Record<string, unknown> : parsed
@@ -157,8 +157,10 @@ function readQuizPack(text: string): { title: string; theme: QuizTheme; roundThe
   const mediaSize = questions.reduce((total, question) => total + (question.imageUrl?.length || 0), 0)
   if (mediaSize > 650_000) throw new Error('This pack contains too much embedded image data. Use hosted image URLs for larger picture quizzes.')
   const theme = quizThemeIds.includes(source.theme as QuizTheme) ? source.theme as QuizTheme : 'quiz-show'
+  const introTheme = quizThemeIds.includes(source.introTheme as QuizTheme) ? source.introTheme as QuizTheme : theme
+  const exitTheme = quizThemeIds.includes(source.exitTheme as QuizTheme) ? source.exitTheme as QuizTheme : theme
   const roundThemes = Object.fromEntries(Object.entries(source.roundThemes && typeof source.roundThemes === 'object' ? source.roundThemes as Record<string, unknown> : {}).filter(([, value]) => quizThemeIds.includes(value as QuizTheme))) as Record<string, QuizTheme>
-  return { title: source.title.trim(), theme, roundThemes, questions }
+  return { title: source.title.trim(), theme, introTheme, exitTheme, roundThemes, questions }
 }
 const HostAccountContext = createContext<HostAccount | null>(null)
 function HostGate({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
@@ -263,7 +265,7 @@ function AnswerStage({ question, revealed }: { question: Question; revealed: boo
   const entries = question.answer && typeof question.answer === 'object' && !Array.isArray(question.answer)
     ? Object.entries(question.answer).map(([key, value]) => `${key} → ${value}`)
     : Array.isArray(question.answer) ? question.answer.map(String) : question.answer === undefined ? ['The Host is marking the answers'] : [answerLabel(question.answer)]
-  return <div className="reveal-stage" aria-label="Correct answer"><span className="reveal-kicker">✦ ANSWER REVEALED ✦</span><div className="reveal-tiles">{entries.map((entry, index) => <div className="reveal-tile" key={`${entry}-${index}`} style={{animationDelay: `${index * 110}ms`}}><span>{String(index + 1).padStart(2, '0')}</span><strong>{entry}</strong><Check size={24}/></div>)}</div></div>
+  return <div className={`reveal-stage ${entries.length === 1 ? 'single-answer' : ''}`} aria-label="Correct answer"><span className="reveal-kicker">✦ ANSWER REVEALED ✦</span><div className="reveal-tiles">{entries.map((entry, index) => <div className="reveal-tile" key={`${entry}-${index}`} style={{animationDelay: `${index * 110}ms`}}><span>{String(index + 1).padStart(2, '0')}</span><strong>{entry}</strong><Check size={24}/></div>)}</div></div>
 }
 
 function PlayerReveal({ question, response, result }: { question: Question; response: Game['responses'][number] | undefined; result: OwnResult | null }) {
@@ -413,7 +415,7 @@ function Organiser() {
     } catch (error) { setCloudStatus(`Theme change failed: ${(error as Error).message}`) }
   }
   const exportQuiz = (quiz: QuizTemplate) => {
-    const payload = JSON.stringify({ format: 'xp-studio-pack', version: 2, exportedAt: new Date().toISOString(), quiz: { title: quiz.title, theme: quiz.theme, roundThemes: quiz.roundThemes || {}, questions: quiz.questions } }, null, 2)
+    const payload = JSON.stringify({ format: 'xp-studio-pack', version: 3, exportedAt: new Date().toISOString(), quiz: { title: quiz.title, theme: quiz.theme, introTheme: quiz.introTheme || quiz.theme, exitTheme: quiz.exitTheme || quiz.theme, roundThemes: quiz.roundThemes || {}, questions: quiz.questions } }, null, 2)
     const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }))
     const link = document.createElement('a')
     link.href = url
@@ -426,7 +428,7 @@ function Organiser() {
     setCloudBusy(true)
     try {
       const pack = readQuizPack(await file.text())
-      const quiz = importQuiz(pack.title, pack.questions, pack.theme, pack.roundThemes)
+      const quiz = importQuiz(pack.title, pack.questions, pack.theme, pack.roundThemes, pack.introTheme, pack.exitTheme)
       try { await saveQuizTemplateCloud(quiz); setCloudStatus(`Imported “${quiz.title}” and saved it to your cloud library`) }
       catch (error) { setCloudStatus(`Imported “${quiz.title}” in this browser; cloud sync failed: ${(error as Error).message}`) }
       nav('/editor')
@@ -447,9 +449,9 @@ function Organiser() {
   </main></Shell>
 }
 function Editor() {
-  const game = useGame(), library = useQuizLibrary(), nav = useNavigate(), [selected, setSelected] = useState(0), [draft, setDraft] = useState(game.questions[0]), [titleDraft, setTitleDraft] = useState(game.title), [themeDraft, setThemeDraft] = useState<QuizTheme>(game.theme || 'quiz-show'), [roundThemeDraft, setRoundThemeDraft] = useState<QuizTheme | ''>(game.roundThemes?.[game.questions[0]?.round] || ''), [saved, setSaved] = useState(false), [validation, setValidation] = useState(''), [imageBusy, setImageBusy] = useState(false)
+  const game = useGame(), library = useQuizLibrary(), nav = useNavigate(), [selected, setSelected] = useState(0), [draft, setDraft] = useState(game.questions[0]), [titleDraft, setTitleDraft] = useState(game.title), [themeDraft, setThemeDraft] = useState<QuizTheme>(game.theme || 'quiz-show'), [introThemeDraft, setIntroThemeDraft] = useState<QuizTheme>(game.introTheme || game.theme || 'quiz-show'), [exitThemeDraft, setExitThemeDraft] = useState<QuizTheme>(game.exitTheme || game.theme || 'quiz-show'), [roundThemeDraft, setRoundThemeDraft] = useState<QuizTheme | ''>(game.roundThemes?.[game.questions[0]?.round] || ''), [saved, setSaved] = useState(false), [validation, setValidation] = useState(''), [imageBusy, setImageBusy] = useState(false)
   useEffect(() => { setDraft(game.questions[selected] || game.questions[0]); setSaved(false) }, [selected, game.questions])
-  useEffect(() => { setTitleDraft(game.title); setThemeDraft(game.theme || 'quiz-show') }, [game.title, game.theme])
+  useEffect(() => { setTitleDraft(game.title); setThemeDraft(game.theme || 'quiz-show'); setIntroThemeDraft(game.introTheme || game.theme || 'quiz-show'); setExitThemeDraft(game.exitTheme || game.theme || 'quiz-show') }, [game.title, game.theme, game.introTheme, game.exitTheme])
   useEffect(() => { setRoundThemeDraft(game.roundThemes?.[game.questions[selected]?.round] || '') }, [selected, game.questions, game.roundThemes])
   const activeTemplate = library.quizzes.find(quiz => quiz.id === library.activeQuizId)
   const copyStarter = async () => {
@@ -475,6 +477,8 @@ function Editor() {
     update(gameDraft => {
       gameDraft.title = titleDraft.trim()
       gameDraft.theme = themeDraft
+      gameDraft.introTheme = introThemeDraft
+      gameDraft.exitTheme = exitThemeDraft
       gameDraft.questions[selected] = prepared
       const roundThemes = { ...(gameDraft.roundThemes || {}) }
       if (roundThemeDraft) roundThemes[prepared.round] = roundThemeDraft
@@ -544,7 +548,7 @@ function Editor() {
       <div className="editor-list"><div className="editor-list-head"><strong>Questions</strong><span>{roundNames.length} rounds · {game.questions.length} questions</span></div>{game.questions.map((question,index) => <button key={question.id} className={`question-row ${selected===index?'chosen':''}`} onClick={() => setSelected(index)}><span className="question-number">{String(index+1).padStart(2,'0')}</span><span><strong>{question.prompt}</strong><small>{question.round} · {typeNames[question.type]}</small></span></button>)}</div>
       <div className="editor-form">
         <div className="form-top"><div><Badge>{draft.round}</Badge><h2>Question {selected+1}</h2></div><Badge tone="gray">{effectiveScoreMode(draft)==='time'?'Up to ':''}{draft.points} points</Badge></div>
-        <div className="editor-identity-row"><label>Quiz name<input value={titleDraft} onChange={event=>setTitleDraft(event.target.value)} placeholder="My brilliant quiz"/></label><label>Default quiz theme<select value={themeDraft} onChange={event=>setThemeDraft(event.target.value as QuizTheme)}>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small className="field-help">Used by the whole quiz unless a round overrides it.</small></label></div>
+        <div className="editor-identity-row"><label>Quiz name<input value={titleDraft} onChange={event=>setTitleDraft(event.target.value)} placeholder="My brilliant quiz"/></label><label>Default round theme<select value={themeDraft} onChange={event=>setThemeDraft(event.target.value as QuizTheme)}>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small className="field-help">Used by every round unless that round overrides it.</small></label><label>Intro theme<select value={introThemeDraft} onChange={event=>setIntroThemeDraft(event.target.value as QuizTheme)}>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small className="field-help">Used for the lobby and start of this quiz.</small></label><label>Exit theme<select value={exitThemeDraft} onChange={event=>setExitThemeDraft(event.target.value as QuizTheme)}>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small className="field-help">Used for final scores and the thank-you screen.</small></label></div>
         <div className={`theme-picker theme-${previewTheme}`} style={themeSurfaceStyle(previewTheme)}><div><small>{roundThemeDraft?'ROUND THEME OVERRIDE':'QUIZ DEFAULT THEME'}</small><strong>{quizThemes[previewTheme].name}</strong><span className="theme-font-preview">Question One · Ready to Play?</span><span>{quizThemes[previewTheme].description}</span></div></div>
         <div className="editor-round-card"><div><small>ROUND</small><strong>{originalRound}</strong><span>{roundQuestionCount} {roundQuestionCount === 1 ? 'question' : 'questions'} scored together</span></div><Button variant="secondary" onClick={renameRound} disabled={draft.round.trim() === originalRound}>Rename whole round</Button></div>
         <div className="editor-round-row">
@@ -718,6 +722,7 @@ function Host() {
 function MainScreen() {
   const { code } = useParams()
   const nav = useNavigate()
+  const slideRef = useRef<HTMLDivElement>(null)
   const [enteredCode, setEnteredCode] = useState('')
   const [connectionError, setConnectionError] = useState('')
   const [connectedCode, setConnectedCode] = useState('')
@@ -733,13 +738,41 @@ function MainScreen() {
   useThemeScenePreload(liveTheme)
   const showQ=['question','open','closed','reveal'].includes(game.phase)
   const ranking=ranked(game.players)
+  useEffect(() => {
+    const slide = slideRef.current
+    const frame = slide?.parentElement
+    if (!slide || !frame) return
+    let animationFrame = 0
+    const fitSlide = () => {
+      cancelAnimationFrame(animationFrame)
+      animationFrame = requestAnimationFrame(() => {
+        const frameStyle = getComputedStyle(frame)
+        const availableHeight = frame.clientHeight
+          - Number.parseFloat(frameStyle.paddingTop || '0')
+          - Number.parseFloat(frameStyle.paddingBottom || '0')
+        const scale = Math.min(1, Math.max(0, availableHeight) / Math.max(1, slide.scrollHeight))
+        slide.style.setProperty('--slide-scale', String(scale))
+      })
+    }
+    const observer = new ResizeObserver(fitSlide)
+    observer.observe(frame)
+    observer.observe(slide)
+    window.addEventListener('resize', fitSlide)
+    void document.fonts?.ready.then(fitSlide)
+    fitSlide()
+    return () => {
+      cancelAnimationFrame(animationFrame)
+      observer.disconnect()
+      window.removeEventListener('resize', fitSlide)
+    }
+  }, [game.phase, game.questionIndex, game.players.length, q.id, q.imageUrl, q.prompt])
   const openCode = () => {
     const clean = enteredCode.trim().toUpperCase()
     if (clean) nav(`/screen/${clean}`)
   }
   if (!code) return <div className="screen screen-launcher pixelplay-screen-launcher" style={{backgroundImage:`linear-gradient(90deg,#03070ee8,#07101ad6),url("${asset('themes/quiz-show/background.webp')}")`}}><div className="screen-launcher-card"><XPPlayLogo/><div className="eyebrow">MAIN SCREEN · PRESENTATION DISPLAY</div><h1>Connect the big screen</h1><p>Enter the code created by the XP Studio Host console. XP Play will then follow that live game automatically.</p><label>LIVE GAME CODE<input autoFocus maxLength={6} value={enteredCode} onChange={event=>setEnteredCode(event.target.value.toUpperCase())} onKeyDown={event=>event.key==='Enter'&&openCode()} placeholder="ABC123"/></label><Button onClick={openCode} disabled={!enteredCode.trim()}>Launch XP Play <ArrowRight size={18}/></Button><small>The game-specific Main Screen link fills this in automatically.</small><div className="screen-launcher-powered"><XPPlayCredit/></div></div></div>
   if (code && connectedCode !== code) return <div className="screen"><div className="screen-centre"><h1>{connectionError || 'Connecting to the live game…'}</h1></div></div>
-  return <div className={`screen theme-surface theme-${liveTheme} phase-${game.phase}`} style={themeSurfaceStyle(liveTheme)}>{connectionError&&<div className="error" role="alert">{connectionError}</div>}<div className="screen-top"><div className="screen-brand-block"><XPPlayLogo compact/><div className="screen-event"><strong>{game.title}</strong><small>{q?.round || "GET READY TO PLAY"}</small></div></div><div className="screen-code"><small>XP PLAY PORTAL</small><strong className="screen-portal">{location.host}{location.pathname}#/join</strong><span className="screen-code-value"><small>CODE</small><b>{game.code}</b></span><span className="screen-live">● LIVE</span></div></div><div className="screen-content">{game.phase==='lobby'?<div className="screen-lobby"><span className="big-star">✦</span><div className="eyebrow">GET READY TO PLAY</div><h1>{game.title}</h1><p>Scan to open XP Play, then enter</p><div className="lobby-join"><PlayerPortalQr value={`${location.origin}${location.pathname}#/join`}/><div><small>XP PLAY PLAYER PORTAL</small><strong>{location.host}{location.pathname}#/join</strong><div className="giant-code">{game.code}</div></div></div><div className="joined-avatars">{game.players.slice(0,8).map(p=><PlayerAvatar key={p.id} player={p} packs={packs} size={64}/>)}</div><small>{game.players.length} {game.players.length===1?'player':'players'} joined</small></div>:game.phase==='round-intro'?<div className="screen-centre"><span className="round-kicker">UP NEXT</span><h1>{q.round.replace(' · ','\n')}</h1><p>Get ready. The next question is coming.</p></div>:showQ?<div className="screen-question"><div className="screen-q-head"><span>{q.round}</span><span>QUESTION {game.questionIndex+1} / {game.questions.length}</span></div><div className="screen-type"><span><small>QUESTION TYPE</small><strong>{typeNames[q.type]}</strong></span><p><b>HOW TO ANSWER</b>{typeInstructions[q.type]}</p><em className="screen-scoring">{effectiveScoreMode(q)==="time"?"SPEED SCORE · UP TO "+q.points.toLocaleString():q.points.toLocaleString()+" POINTS · FIXED"}</em></div><h1>{q.prompt}</h1><QuestionMediaStage game={game} question={q}/>{q.type==='anagram'&&game.phase!=='reveal'&&<AnagramBoard game={game} question={q}/>}<AnswerStage question={q} revealed={game.phase==='reveal'}/>{game.phase!=='reveal'&&['ordering','matching','categorise'].includes(q.type)&&q.items&&<div className="screen-items">{q.items.map(item=><span key={item}>{item}</span>)}</div>}<Countdown game={game} className="screen-timer"/>{game.phase==='reveal'?<div className="screen-reveal-caption"><Sparkles size={18}/> {q.explanation || 'The correct answer is highlighted above.'}</div>:<div className="screen-footline"><span>{game.phase==='open'?'Answers open':game.phase==='closed'?'Answers closed':'Get ready to answer'}</span><span>{game.responses.filter(r=>r.questionId===q.id).length} answers received</span></div>}</div>:['scores','round-scores','leaderboard','final'].includes(game.phase)?<div className="screen-scores"><span className="round-kicker">{game.phase==="round-scores"?q.round:game.phase==="scores"?"AFTER THIS QUESTION":game.phase==="final"?"THE FINAL RESULTS":"ALL ROUNDS"}</span><h1>{game.phase==="round-scores"?"Round scores":game.phase==="final"?"Our champions":game.phase==="scores"?"Question complete":"Leaderboard"}</h1><div className="screen-ranks">{(game.phase==="round-scores"?rankedRound(game,q.round):ranking).slice(0,10).map(p=><div key={p.id}><span>#{p.rank}</span><PlayerAvatar player={p} packs={packs} size={52}/><strong>{p.name}</strong><b>{(game.phase==="round-scores"?roundPoints(game,p.id,q.round):p.score).toLocaleString()}</b></div>)}</div></div>:<div className={`screen-centre phase-scene-copy ${game.phase==='break'?'break-copy':'thanks-copy'}`}><span className="scene-symbol" aria-hidden="true">{sceneCopy.symbol}</span><span className="scene-kicker">{sceneCopy.kicker}</span><h1>{sceneCopy.title}</h1><p>{sceneCopy.screen}</p></div>}</div><div className="screen-bottom"><XPPlayCredit/><span>{phaseNames[game.phase].toUpperCase()}</span></div></div>
+  return <div className={`screen theme-surface theme-${liveTheme} phase-${game.phase}`} style={themeSurfaceStyle(liveTheme)}>{connectionError&&<div className="error" role="alert">{connectionError}</div>}<div className="screen-top"><div className="screen-brand-block"><XPPlayLogo compact/><div className="screen-event"><strong>{game.title}</strong><small>{q?.round || "GET READY TO PLAY"}</small></div></div><div className="screen-code"><small>XP PLAY PORTAL</small><strong className="screen-portal">{location.host}{location.pathname}#/join</strong><span className="screen-code-value"><small>CODE</small><b>{game.code}</b></span><span className="screen-live">● LIVE</span></div></div><div className="screen-content">{game.phase==='lobby'?<div ref={slideRef} className="screen-lobby"><span className="big-star">✦</span><div className="eyebrow">GET READY TO PLAY</div><h1>{game.title}</h1><p>Scan to open XP Play, then enter</p><div className="lobby-join"><PlayerPortalQr value={`${location.origin}${location.pathname}#/join`}/><div><small>XP PLAY PLAYER PORTAL</small><strong>{location.host}{location.pathname}#/join</strong><div className="giant-code">{game.code}</div></div></div><div className="joined-avatars">{game.players.slice(0,8).map(p=><PlayerAvatar key={p.id} player={p} packs={packs} size={64}/>)}</div><small>{game.players.length} {game.players.length===1?'player':'players'} joined</small></div>:game.phase==='round-intro'?<div ref={slideRef} className="screen-centre round-intro-screen"><span className="round-kicker">UP NEXT</span><h1>{q.round.replace(' · ','\n')}</h1><p>Get ready. The next question is coming.</p></div>:showQ?<div ref={slideRef} className={`screen-question ${q.imageUrl?"has-media":""}`}><div className="screen-q-head"><span>{q.round}</span><span>QUESTION {game.questionIndex+1} / {game.questions.length}</span></div><div className="screen-type"><span><small>QUESTION TYPE</small><strong>{typeNames[q.type]}</strong></span><p><b>HOW TO ANSWER</b>{typeInstructions[q.type]}</p><em className="screen-scoring">{effectiveScoreMode(q)==="time"?"SPEED SCORE · UP TO "+q.points.toLocaleString():q.points.toLocaleString()+" POINTS · FIXED"}</em></div><h1>{q.prompt}</h1><QuestionMediaStage game={game} question={q}/>{q.type==='anagram'&&game.phase!=='reveal'&&<AnagramBoard game={game} question={q}/>}<AnswerStage question={q} revealed={game.phase==='reveal'}/>{game.phase!=='reveal'&&['ordering','matching','categorise'].includes(q.type)&&q.items&&<div className="screen-items">{q.items.map(item=><span key={item}>{item}</span>)}</div>}<Countdown game={game} className="screen-timer"/>{game.phase==='reveal'?<div className="screen-reveal-caption"><Sparkles size={18}/> {q.explanation || 'The correct answer is highlighted above.'}</div>:<div className="screen-footline"><span>{game.phase==='open'?'Answers open':game.phase==='closed'?'Answers closed':'Get ready to answer'}</span><span>{game.answerCount || 0} answers received</span></div>}</div>:['scores','round-scores','leaderboard','final'].includes(game.phase)?<div ref={slideRef} className="screen-scores"><span className="round-kicker">{game.phase==="round-scores"?q.round:game.phase==="scores"?"AFTER THIS QUESTION":game.phase==="final"?"THE FINAL RESULTS":"ALL ROUNDS"}</span><h1>{game.phase==="round-scores"?"Round scores":game.phase==="final"?"Our champions":game.phase==="scores"?"Question complete":"Leaderboard"}</h1><div className="screen-ranks">{(game.phase==="round-scores"?rankedRound(game,q.round):ranking).slice(0,10).map(p=><div key={p.id}><span>#{p.rank}</span><PlayerAvatar player={p} packs={packs} size={52}/><strong>{p.name}</strong><b>{(game.phase==="round-scores"?roundPoints(game,p.id,q.round):p.score).toLocaleString()}</b></div>)}</div></div>:<div ref={slideRef} className={`screen-centre phase-scene-copy ${game.phase==='break'?'break-copy':'thanks-copy'}`}><span className="scene-symbol" aria-hidden="true">{sceneCopy.symbol}</span><span className="scene-kicker">{sceneCopy.kicker}</span><h1>{sceneCopy.title}</h1><p>{sceneCopy.screen}</p></div>}</div><div className="screen-bottom"><XPPlayCredit/><span>{phaseNames[game.phase].toUpperCase()}</span></div></div>
 }
 function Join() {
   const { code: routeCode } = useParams()

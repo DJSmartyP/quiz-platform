@@ -109,6 +109,8 @@ export type Game = {
   code: string
   title: string
   theme: QuizTheme
+  introTheme?: QuizTheme
+  exitTheme?: QuizTheme
   roundThemes?: Record<string, QuizTheme>
   phase: Phase
   returnPhase?: Phase
@@ -122,6 +124,7 @@ export type Game = {
   responses: Response[]
   grades: Grade[]
   questions: Question[]
+  answerCount?: number
 }
 
 export const typeNames: Record<QuestionType, string> = {
@@ -227,7 +230,7 @@ export const sampleQuestions: Question[] = [
 ]
 
 export const freshGame = (): Game => ({
-  code: 'PEAK7', title: 'The Great Quiz Night', theme: 'quiz-show', phase: 'lobby', questionIndex: 0,
+  code: 'PEAK7', title: 'The Great Quiz Night', theme: 'quiz-show', introTheme: 'quiz-show', exitTheme: 'quiz-show', phase: 'lobby', questionIndex: 0,
   stateVersion: 1, allowLateJoins: true, players: [], responses: [], grades: [],
   questions: sampleQuestions.map(q => q.type === 'anagram' ? { ...q, scramble: scrambleWord(String(q.answer)) } : { ...q }),
 })
@@ -235,6 +238,8 @@ export const freshGame = (): Game => ({
 export const normalise = (text: string) => text.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
 export const currentQuestion = (game: Game) => game.questions[game.questionIndex]
 export const currentTheme = (game: Game): QuizTheme => {
+  if (game.phase === 'lobby') return game.introTheme || game.theme || 'quiz-show'
+  if (['final', 'thanks', 'closed-game'].includes(game.phase)) return game.exitTheme || game.theme || 'quiz-show'
   const roundPhase = ['round-intro', 'question', 'open', 'closed', 'reveal', 'scores', 'round-scores', 'leaderboard', 'break'].includes(game.phase)
   return roundPhase ? game.roundThemes?.[currentQuestion(game)?.round] || game.theme || 'quiz-show' : game.theme || 'quiz-show'
 }

@@ -29,7 +29,7 @@ function playerAuth() { return playerAuthInstance ||= getAuth(playerApp) }
 const controllerId = sessionStorage.getItem('quiz-host-controller-id') || crypto.randomUUID()
 sessionStorage.setItem('quiz-host-controller-id', controllerId)
 
-type PublicDocument = { hostUid: string; controllerId: string; memberUids: string[]; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
+type PublicDocument = { hostUid: string; controllerId: string; memberUids: string[]; stateVersion: number; answerCount?: number; game: Game; openedAtServer?: { toMillis(): number } }
 type PrivateDocument = { hostUid: string; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
 type HostCommand = { type: 'advance' | 'break' | 'resume' | 'void' | 'grade' | 'end'; playerId?: string; points?: number }
 export type LiveSessionRecord = {
@@ -90,6 +90,19 @@ function requireGoogleUser(user: User | null) {
 
 function hostCodeKey(uid: string) { return `quiz-live-host-code:${uid}` }
 const sessionRetentionMs = 24 * 60 * 60 * 1000
+
+function reportOptionalPlayerSyncError(label: string, error: unknown, onError: (message: string) => void) {
+  const detail = error as { code?: string; message?: string }
+  // A transient permission response can arrive while anonymous Auth is being
+  // restored. The authoritative submission transaction still reports real
+  // failures, so an optional result/status listener must not show a false
+  // submission error to the player.
+  if (detail.code === 'permission-denied') {
+    console.warn(`${label} was skipped while player authentication settled.`, error)
+    return
+  }
+  onError(`${label}: ${detail.message || 'Unknown sync error'}`)
+}
 
 function accountFrom(user: User, data: Partial<HostAccount>): HostAccount {
   return {
@@ -328,9 +341,10 @@ function withRoster(game: Game, roster: Player[]): Game {
 
 function timedGame(data: PublicDocument | PrivateDocument): Game {
   const openedAt = data.openedAtServer?.toMillis()
-  if (!openedAt || !data.game.openedAt) return data.game
-  const duration = data.game.questions[data.game.questionIndex]?.duration || 30
-  return { ...data.game, openedAt, closesAt: openedAt + duration * 1000 }
+  const game = { ...data.game, answerCount: 'answerCount' in data ? data.answerCount || 0 : data.game.answerCount || 0 }
+  if (!openedAt || !game.openedAt) return game
+  const duration = game.questions[game.questionIndex]?.duration || 30
+  return { ...game, openedAt, closesAt: openedAt + duration * 1000 }
 }
 
 export async function startLiveHost(onStatus: (message: string, canControl: boolean) => void, allowPopup = true, fresh = false, claimControl = true) {
@@ -354,7 +368,7 @@ export async function startLiveHost(onStatus: (message: string, canControl: bool
     const initial: Game = serialise({ ...getGame(), code, phase: 'lobby', questionIndex: 0,
       stateVersion: 1, players: [], responses: [], grades: [],
       openedAt: undefined, closesAt: undefined, closedAt: undefined, returnPhase: undefined })
-    tx.set(publicRef, { hostUid: uid, controllerId, memberUids: [], stateVersion: initial.stateVersion, game: serialise(publicGame(initial)) })
+    tx.set(publicRef, { hostUid: uid, controllerId, memberUids: [], stateVersion: initial.stateVersion, answerCount: 0, game: serialise(publicGame(initial)) })
     tx.set(privateRef, { hostUid: uid, stateVersion: initial.stateVersion, game: initial })
     tx.set(sessionRef, { code, ownerUid: uid, title: initial.title, status: 'active', createdAt: serverTimestamp() })
   })
@@ -484,7 +498,8 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
     }
     if (next === base) return
     next.responses = [] // submissions stay in their own protected records
-    const data = { stateVersion: next.stateVersion, game: serialise(publicGame(next)) }
+    const answerCount = next.questionIndex === base.questionIndex ? Number(published.answerCount || 0) : 0
+    const data = { stateVersion: next.stateVersion, answerCount, game: serialise(publicGame(next)) }
     const ending = next.phase === 'closed-game' && base.phase !== 'closed-game'
     const deleteAfterMs = Date.now() + sessionRetentionMs
     tx.update(privateRef, { stateVersion: next.stateVersion, game: serialise(next), ...(next.phase === 'open' && base.phase !== 'open' ? { openedAtServer: serverTimestamp() } : {}) })
@@ -559,6 +574,7 @@ export async function joinLiveGame(code: string, name: string, avatarId: string,
   let stopResponse: Unsubscribe | null = null
   let stopResult: Unsubscribe | null = null
   let stopRoster: Unsubscribe | null = null
+  let retryTimer: number | null = null
   let responseQuestionId = ''
   let publicState: Game | null = null
   let roster: Player[] = []
@@ -568,31 +584,49 @@ export async function joinLiveGame(code: string, name: string, avatarId: string,
     if (!next.players.some(player => player.id === uid)) next.players.push({ id: uid, name: trimmed, avatarId, score: 0 })
     receiveLiveGame(next, 'player')
   }
+  const watchOwnQuestion = (questionId: string, attempt = 0) => {
+    stopResponse?.()
+    stopResult?.()
+    const retryOrReport = (label: string, error: unknown) => {
+      const permissionDenied = (error as { code?: string }).code === 'permission-denied'
+      if (permissionDenied && attempt < 3) {
+        if (retryTimer !== null) window.clearTimeout(retryTimer)
+        retryTimer = window.setTimeout(() => watchOwnQuestion(questionId, attempt + 1), 250 * 2 ** attempt)
+        return
+      }
+      reportOptionalPlayerSyncError(label, error, onError)
+    }
+    stopResponse = onSnapshot(doc(playerDb, 'liveGames', upper, 'responses', `${uid}_${questionId}`), { includeMetadataChanges: true }, own => {
+      if (own.metadata.hasPendingWrites || own.metadata.fromCache) return
+      onError('')
+      receiveOwnLiveResponse(own.exists() ? own.data() as Response : null)
+      onReady(questionId)
+    }, error => retryOrReport('Answer status unavailable', error))
+    stopResult = onSnapshot(doc(playerDb, 'liveGames', upper, 'results', `${uid}_${questionId}`), own => {
+      if (!own.metadata.hasPendingWrites) {
+        onError('')
+        onResult(own.exists() ? { points: Number(own.data().points), verdict: own.data().verdict as OwnResult['verdict'] } : null)
+      }
+    }, error => retryOrReport('Result unavailable', error))
+  }
   const stopGame = onSnapshot(publicRef, snap => {
     if (!snap.exists()) { onError('This game is no longer available.'); return }
+    onError('')
     publicState = timedGame(snap.data() as PublicDocument)
     render()
     const questionId = publicState.questions[publicState.questionIndex]?.id
     if (questionId && responseQuestionId !== questionId) {
       responseQuestionId = questionId
-      stopResponse?.()
-      stopResult?.()
+      if (retryTimer !== null) window.clearTimeout(retryTimer)
       onResult(null)
-      stopResponse = onSnapshot(doc(playerDb, 'liveGames', upper, 'responses', `${uid}_${questionId}`), { includeMetadataChanges: true }, own => {
-        if (own.metadata.hasPendingWrites || own.metadata.fromCache) return
-        receiveOwnLiveResponse(own.exists() ? own.data() as Response : null)
-        onReady(questionId)
-      }, error => onError(`Answer status unavailable: ${error.message}`))
-      stopResult = onSnapshot(doc(playerDb, 'liveGames', upper, 'results', `${uid}_${questionId}`), own => {
-        if (!own.metadata.hasPendingWrites) onResult(own.exists() ? { points: Number(own.data().points), verdict: own.data().verdict as OwnResult['verdict'] } : null)
-      }, error => onError(`Result unavailable: ${error.message}`))
+      watchOwnQuestion(questionId)
     }
   }, error => onError(`Game sync unavailable: ${error.message}`))
   stopRoster = onSnapshot(collection(playerDb, 'liveGames', upper, 'players'), result => {
     roster = result.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0 }))
     render()
   }, error => onError(`Player list unavailable: ${error.message}`))
-  playerConnection = { code: upper, uid, stop: () => { stopGame(); stopResponse?.(); stopResult?.(); stopRoster?.() } }
+  playerConnection = { code: upper, uid, stop: () => { stopGame(); stopResponse?.(); stopResult?.(); stopRoster?.(); if (retryTimer !== null) window.clearTimeout(retryTimer) } }
   sessionStorage.setItem('quiz-demo-player-id', uid)
   localStorage.setItem('quiz-live-player-code', upper)
   return uid
@@ -622,6 +656,7 @@ export async function submitLiveAnswer(value: unknown) {
     const existing = await tx.get(responseRef)
     if (existing.exists()) throw new Error('Your answer is already locked in.')
     saved = { playerId: uid, questionId: question.id, value, submittedAt: Date.now() }
+    tx.update(publicRef, { answerCount: Number(current.data().answerCount || 0) + 1 })
     tx.set(responseRef, saved)
   })
   if (saved) receiveOwnLiveResponse(saved) // The transaction promise is the server acknowledgement.

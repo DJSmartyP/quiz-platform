@@ -63,7 +63,7 @@ test('break and resume are state driven and versioned', () => {
 
 test('public state withholds future questions, answer keys and private submissions', () => {
   const imageUrl = 'data:image/webp;base64,active-question'
-  const game = { ...base(), phase: 'open', responses: [{ playerId: 'a', questionId: 'q1', value: 'Mars', submittedAt: 1000 }],
+  const game = { ...base(), phase: 'open', answerCount: 1, responses: [{ playerId: 'a', questionId: 'q1', value: 'Mars', submittedAt: 1000 }],
     grades: [{ playerId: 'a', questionId: 'q1', points: 1000, committed: false }] }
   game.questions[0].imageUrl = imageUrl
   game.questions[1].imageUrl = 'data:image/webp;base64,future-question'
@@ -75,6 +75,7 @@ test('public state withholds future questions, answer keys and private submissio
   assert.equal(before.questions[0].imageUrl, imageUrl)
   assert.equal(before.questions[1].imageUrl, undefined)
   assert.deepEqual(before.responses, [])
+  assert.equal(before.answerCount, 1)
   assert.deepEqual(before.grades, [])
   const revealed = publicGame({ ...game, phase: 'reveal' })
   assert.equal(revealed.questions[0].answer, 'Mars')

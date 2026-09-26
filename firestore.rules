@@ -81,15 +81,16 @@ service cloud.firestore {
       allow list: if false;
       allow delete: if isHost(code) || isAdmin();
       allow create: if activeHost(request.auth.uid) &&
-        request.resource.data.keys().hasOnly(['hostUid', 'controllerId', 'memberUids', 'stateVersion', 'game']) &&
+        request.resource.data.keys().hasOnly(['hostUid', 'controllerId', 'memberUids', 'stateVersion', 'answerCount', 'game']) &&
         request.resource.data.hostUid == request.auth.uid && request.resource.data.memberUids == [] &&
-        request.resource.data.stateVersion is int;
+        request.resource.data.stateVersion is int &&
+        (!request.resource.data.keys().hasAny(['answerCount']) || request.resource.data.answerCount == 0);
       allow update: if (
         isHost(code) && request.resource.data.hostUid == resource.data.hostUid &&
         request.resource.data.memberUids == resource.data.memberUids &&
         (
           (request.resource.data.stateVersion == resource.data.stateVersion + 1 &&
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stateVersion', 'game', 'openedAtServer', 'endedAt', 'deleteAfterMs'])) ||
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stateVersion', 'answerCount', 'game', 'openedAtServer', 'endedAt', 'deleteAfterMs'])) ||
           (request.resource.data.stateVersion == resource.data.stateVersion &&
            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['controllerId']))
         )
@@ -102,6 +103,14 @@ service cloud.firestore {
         request.resource.data.memberUids.hasAny([request.auth.uid]) &&
         resource.data.game.phase != 'thanks' && resource.data.game.phase != 'closed-game' &&
         (resource.data.game.phase == 'lobby' || resource.data.game.allowLateJoins == true)
+      ) || (
+        signedIn() && resource.data.memberUids.hasAny([request.auth.uid]) &&
+        resource.data.game.phase == 'open' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answerCount']) &&
+        request.resource.data.answerCount == resource.data.get('answerCount', 0) + 1 &&
+        !exists(/databases/$(database)/documents/liveGames/$(code)/responses/$(request.auth.uid + '_' + resource.data.game.questions[resource.data.game.questionIndex].id)) &&
+        existsAfter(/databases/$(database)/documents/liveGames/$(code)/responses/$(request.auth.uid + '_' + resource.data.game.questions[resource.data.game.questionIndex].id)) &&
+        getAfter(/databases/$(database)/documents/liveGames/$(code)/responses/$(request.auth.uid + '_' + resource.data.game.questions[resource.data.game.questionIndex].id)).data.playerId == request.auth.uid
       );
 
       match /private/{documentId} {
