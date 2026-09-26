@@ -140,13 +140,13 @@ service cloud.firestore {
         function validSubmission() {
           let live = session(code).data;
           return signedIn() && live.memberUids.hasAny([request.auth.uid]) && live.game.phase == 'open' &&
-            request.resource.data.keys().hasOnly(['playerId', 'questionId', 'value', 'submittedAt']) &&
+            (!live.game.keys().hasAny(['questionEligiblePlayerIds']) || live.game.questionEligiblePlayerIds.hasAny([request.auth.uid])) &&
+            request.resource.data.keys().hasOnly(['playerId', 'questionId', 'value', 'submittedAt', 'submittedAtServer']) &&
             request.resource.data.playerId == request.auth.uid &&
             request.resource.data.questionId == live.game.questions[live.game.questionIndex].id &&
             responseId == request.auth.uid + '_' + request.resource.data.questionId &&
             request.resource.data.submittedAt is int &&
-            request.resource.data.submittedAt >= request.time.toMillis() - 5000 &&
-            request.resource.data.submittedAt <= request.time.toMillis() + 5000 &&
+            request.resource.data.submittedAtServer == request.time &&
             request.time < live.openedAtServer + duration.value(live.game.questions[live.game.questionIndex].duration, 's');
         }
         allow get: if isHost(code) || (signedIn() && responseId.matches('^' + request.auth.uid + '_[^/]+$'));

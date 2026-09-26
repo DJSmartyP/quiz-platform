@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
-import { currentQuestion, freshGame, gradeFor, isLastQuestionInRound, normalise, ranked, responseFor, scoreAnswer, scrambleWord, type Game, type Phase, type Question, type QuizTheme } from './model'
+import { currentQuestion, freshGame, isLastQuestionInRound, normalise, ranked, responseFor, scrambleWord, type Game, type Phase, type Question, type QuizTheme } from './model'
 import { advanceGame, breakGame, resumeGame } from './gameEngine'
+import { normaliseQuestion, scoreQuestion } from './scoring'
 
 const key = 'quiz-platform-demo-v1'
 const libraryKey = 'quiz-platform-library-v1'
@@ -11,7 +12,7 @@ let game: Game = (() => {
   try {
     const loaded = JSON.parse(localStorage.getItem(key) || '') as Game
     loaded.theme = loaded.theme || 'quiz-show'
-    loaded.questions = loaded.questions.map(q => q.type === 'anagram' && !q.scramble ? { ...q, scramble: scrambleWord(String(q.answer)) } : q)
+    loaded.questions = loaded.questions.map(q => normaliseQuestion(q.type === 'anagram' && !q.scramble ? { ...q, scramble: scrambleWord(String(q.answer)) } : q))
     if (loaded.phase === 'open' && loaded.openedAt && !loaded.closesAt) loaded.closesAt = loaded.openedAt + (loaded.questions[loaded.questionIndex].duration || 30) * 1000
     if (loaded.phase === 'scores' && isLastQuestionInRound(loaded)) loaded.phase = 'round-scores'
     localStorage.setItem(key, JSON.stringify(loaded))
@@ -22,7 +23,7 @@ export type QuizTemplate = { id: string; title: string; theme: QuizTheme; introT
 let quizLibrary: QuizTemplate[] = (() => {
   try {
     const loaded = JSON.parse(localStorage.getItem(libraryKey) || '') as QuizTemplate[]
-    if (Array.isArray(loaded) && loaded.length) return loaded.map(quiz => ({ ...quiz, theme: quiz.theme || 'quiz-show' }))
+    if (Array.isArray(loaded) && loaded.length) return loaded.map(quiz => ({ ...quiz, theme: quiz.theme || 'quiz-show', questions: quiz.questions.map(normaliseQuestion) }))
   } catch { /* Migrate the existing single quiz below. */ }
   return [{ id: 'quizforge-test', title: game.title, theme: game.theme, introTheme: game.introTheme, exitTheme: game.exitTheme, roundThemes: game.roundThemes, questions: structuredClone(game.questions), builtIn: true, updatedAt: Date.now() }]
 })()
@@ -95,7 +96,7 @@ export function scopeQuizWorkspace(uid: string, migrateLegacy = false) {
   if (!scopedLibrary.length && migrateLegacy) scopedLibrary = previousLibrary
   const storedStarter = scopedLibrary.find(item => item.id === testTemplate.id)
   const starter = { ...testTemplate, theme: storedStarter?.theme || testTemplate.theme, updatedAt: storedStarter?.updatedAt || testTemplate.updatedAt }
-  quizLibrary = [starter, ...scopedLibrary.filter(item => item.id !== starter.id).map(item => ({ ...item, theme: item.theme || 'quiz-show' }))]
+  quizLibrary = [starter, ...scopedLibrary.filter(item => item.id !== starter.id).map(item => ({ ...item, theme: item.theme || 'quiz-show', questions: item.questions.map(normaliseQuestion) }))]
   activeQuizId = localStorage.getItem(scopedKey(activeQuizKey)) || (migrateLegacy ? activeQuizId : starter.id)
   if (!quizLibrary.some(item => item.id === activeQuizId)) activeQuizId = starter.id
   try {
@@ -146,7 +147,7 @@ export function update(fn: (draft: Game) => void) {
   save(draft)
 }
 function gameFromQuiz(quiz: QuizTemplate): Game {
-  return { ...freshGame(), title: quiz.title, theme: quiz.theme || 'quiz-show', introTheme: quiz.introTheme || quiz.theme || 'quiz-show', exitTheme: quiz.exitTheme || quiz.theme || 'quiz-show', roundThemes: structuredClone(quiz.roundThemes || {}), questions: structuredClone(quiz.questions), code: game.code }
+  return { ...freshGame(), title: quiz.title, theme: quiz.theme || 'quiz-show', introTheme: quiz.introTheme || quiz.theme || 'quiz-show', exitTheme: quiz.exitTheme || quiz.theme || 'quiz-show', roundThemes: structuredClone(quiz.roundThemes || {}), questions: structuredClone(quiz.questions).map(normaliseQuestion), code: game.code }
 }
 export function createQuiz(title = 'Untitled Quiz') {
   if (liveRole) throw new Error('Leave the live session before changing quizzes.')
@@ -190,7 +191,7 @@ export function importQuiz(title: string, questions: Question[], theme: QuizThem
     introTheme,
     exitTheme,
     roundThemes: structuredClone(roundThemes),
-    questions: structuredClone(questions).map(question => ({ ...question, id: crypto.randomUUID() })),
+    questions: structuredClone(questions).map(question => normaliseQuestion({ ...question, id: crypto.randomUUID() })),
     updatedAt: Date.now(),
   }
   quizLibrary = [...quizLibrary, quiz]
@@ -213,7 +214,7 @@ export function deleteQuiz(id: string) {
 }
 export function replaceQuizLibrary(quizzes: QuizTemplate[]) {
   if (liveRole || !quizzes.length) return
-  quizLibrary = structuredClone(quizzes).map(quiz => ({ ...quiz, theme: quiz.theme || 'quiz-show' }))
+  quizLibrary = structuredClone(quizzes).map(quiz => ({ ...quiz, theme: quiz.theme || 'quiz-show', questions: quiz.questions.map(normaliseQuestion) }))
   if (!quizLibrary.some(item => item.id === activeQuizId)) activeQuizId = quizLibrary[0].id
   persistLibrary()
   const active = quizLibrary.find(item => item.id === activeQuizId)
@@ -276,17 +277,14 @@ export function submitAnswer(playerId: string, value: unknown) {
   const q = currentQuestion(game)
   if (!q || game.phase !== 'open' || (game.closesAt && Date.now() >= game.closesAt)) throw new Error('Answers are closed.')
   const existing = responseFor(game, playerId, q.id)
-  if (existing && q.type !== 'anagram') throw new Error('Your answer is already locked in.')
-  if (existing && q.type === 'anagram' && gradeFor(game, playerId, q.id)?.points) throw new Error('You already solved this anagram.')
-  if (existing && q.type === 'anagram' && Date.now() - existing.submittedAt < 1000) throw new Error('Wait a moment before guessing again.')
-  const seconds = (Date.now() - (game.openedAt || Date.now())) / 1000
-  const anagramPoints = q.type === 'anagram' ? scoreAnswer(q, value, seconds) : 0
+  if (existing) throw new Error('Your answer is already locked in.')
+  const response = { playerId, questionId: q.id, value, submittedAt: Date.now() }
+  const anagramGrade = q.type === 'anagram' ? scoreQuestion(q, [response], [playerId], { openedAt: game.openedAt })[0] : undefined
+  if (q.type === 'anagram' && !anagramGrade?.points) return false
   update(d => {
-    d.responses = d.responses.filter(r => !(r.playerId === playerId && r.questionId === q.id))
-    d.responses.push({ playerId, questionId: q.id, value, submittedAt: Date.now() })
-    if (anagramPoints > 0) d.grades.push({ playerId, questionId: q.id, points: anagramPoints, committed: false })
+    d.responses.push(response)
   })
-  return q.type === 'anagram' ? anagramPoints > 0 : undefined
+  return q.type === 'anagram' ? true : undefined
 }
 export function expireAnswers() {
   if (liveRole) return // Live expiry is a versioned Host transition, never a Player timer write.
@@ -297,7 +295,8 @@ export function setGrade(playerId: string, points: number) {
   const q = currentQuestion(game)
   update(d => {
     d.grades = d.grades.filter(g => !(g.playerId === playerId && g.questionId === q.id))
-    d.grades.push({ playerId, questionId: q.id, points: Math.max(0, Math.round(points)), committed: false })
+    const awarded = Math.max(0, Math.round(points / 10) * 10)
+    d.grades.push({ playerId, questionId: q.id, points: awarded, committed: false, verdict: awarded >= q.points ? 'correct' : awarded > 0 ? 'partial' : 'incorrect', detail: awarded >= q.points ? 'Host awarded full credit' : awarded > 0 ? 'Host awarded partial credit' : 'Host awarded no credit', source: 'manual' })
   })
 }
 export function finaliseQuestion(expectedVersion = game.stateVersion) {

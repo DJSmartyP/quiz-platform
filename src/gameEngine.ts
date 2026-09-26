@@ -1,4 +1,5 @@
-import { currentQuestion, isLastQuestionInRound, scoreAnswer, timeScaledPoints, type Game } from './model.ts'
+import { currentQuestion, isLastQuestionInRound, type Game } from './model.ts'
+import { scoreQuestion } from './scoring.ts'
 
 /** One deterministic Host transition. A Firestore transaction checks the expected version first. */
 export function advanceGame(previous: Game): Game {
@@ -11,23 +12,23 @@ export function advanceGame(previous: Game): Game {
     next.openedAt = Date.now()
     next.closesAt = next.openedAt + (next.questions[next.questionIndex].duration || 30) * 1000
     next.closedAt = undefined
+    next.questionEligiblePlayerIds = next.players.map(player => player.id)
   } else if (phase === 'open') { next.phase = 'closed'; next.closedAt = Date.now() }
-  else if (phase === 'closed') next.phase = 'reveal'
+  else if (phase === 'closed') {
+    const question = currentQuestion(next)
+    const eligible = next.questionEligiblePlayerIds || next.players.map(player => player.id)
+    const otherGrades = next.grades.filter(grade => grade.questionId !== question.id)
+    const currentGrades = next.grades.filter(grade => grade.questionId === question.id)
+    next.grades = [...otherGrades, ...scoreQuestion(question, next.responses, eligible, { openedAt: next.openedAt, existingGrades: currentGrades })]
+    next.phase = 'reveal'
+  }
   else if (phase === 'reveal') {
     const q = currentQuestion(next)
-    const numeric = next.responses.filter(r => r.questionId === q.id && Number.isFinite(Number(r.value)))
-    const closestDistance = q.type === 'closest' && numeric.length
-      ? Math.min(...numeric.map(r => Math.abs(Number(r.value) - Number(q.answer)))) : Infinity
-    for (const player of next.players) {
-      const existing = next.grades.find(g => g.playerId === player.id && g.questionId === q.id)
-      if (existing?.committed) continue
-      const response = next.responses.find(r => r.playerId === player.id && r.questionId === q.id)
-      let points = existing?.points ?? (response ? scoreAnswer(q, response.value, (response.submittedAt - (next.openedAt || response.submittedAt)) / 1000) : 0)
-      if (q.type === 'closest') points = response && Math.abs(Number(response.value) - Number(q.answer)) === closestDistance
-        ? timeScaledPoints(q, q.points, (response.submittedAt - (next.openedAt || response.submittedAt)) / 1000) : 0
-      if (existing) { existing.points = points; existing.committed = true }
-      else next.grades.push({ playerId: player.id, questionId: q.id, points, committed: true })
-      player.score += points
+    for (const grade of next.grades.filter(item => item.questionId === q.id)) {
+      if (grade.committed || grade.verdict === 'pending') continue
+      grade.committed = true
+      const player = next.players.find(item => item.id === grade.playerId)
+      if (player) player.score += grade.points
     }
     next.phase = isLastQuestionInRound(next) ? 'round-scores' : 'scores'
   } else if (phase === 'scores') {

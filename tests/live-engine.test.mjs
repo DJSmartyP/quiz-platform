@@ -32,17 +32,24 @@ test('Host phases open controls only after question display and preserve per-rou
 
 test('finalising a question creates one committed grade per Player and a later round score', () => {
   let game = base()
-  game.phase = 'reveal'
+  game.phase = 'closed'
   game.openedAt = 1000
+  game.questionEligiblePlayerIds = ['a', 'b']
   game.responses = [{ playerId: 'a', questionId: 'q1', value: 'Mars', submittedAt: 3000 }]
+  game = advanceGame(game)
+  assert.equal(game.phase, 'reveal')
+  assert.deepEqual(game.players.map(p => p.score), [0, 0])
+  assert.equal(game.grades.filter(g => g.questionId === 'q1' && !g.committed).length, 2)
   game = advanceGame(game)
   assert.deepEqual(game.players.map(p => p.score), [1000, 0])
   assert.equal(game.grades.filter(g => g.questionId === 'q1').length, 2)
   const unchanged = advanceGame({ ...game, phase: 'reveal' })
   assert.deepEqual(unchanged.players.map(p => p.score), [1000, 0])
   game.questionIndex = 1
-  game.phase = 'reveal'
+  game.phase = 'closed'
+  game.questionEligiblePlayerIds = ['a', 'b']
   game.responses = [{ playerId: 'b', questionId: 'q2', value: 'Mars', submittedAt: 3000 }]
+  game = advanceGame(game)
   game = advanceGame(game)
   assert.equal(game.phase, 'round-scores')
   assert.deepEqual(game.players.map(p => p.score), [1000, 1000])
@@ -89,23 +96,21 @@ test('public state releases only the active anagram target needed for timed solv
   const view = publicGame(game)
   assert.equal(view.questions[0].answer, undefined)
   assert.equal(view.questions[0].anagramSolution, 'Platypus')
-  assert.equal(view.questions[0].scoreMode, 'time')
+  assert.equal(view.questions[0].scoreMode, undefined)
   assert.equal(view.questions[1].anagramSolution, undefined)
 })
 
 test('own reveal distinguishes right, wrong, partial and unmarked answers', () => {
   const q = question('q1', 'Round 1')
   const response = value => ({ playerId: 'a', questionId: 'q1', value, submittedAt: 3000 })
-  assert.deepEqual(resultForAnswer(q, response('Mars'), undefined, [], 1000), { points: 1000, verdict: 'correct' })
-  assert.deepEqual(resultForAnswer(q, response('Venus'), undefined, [], 1000), { points: 0, verdict: 'incorrect' })
-  assert.deepEqual(resultForAnswer(q, undefined, undefined, [], 1000), { points: 0, verdict: 'incorrect' })
+  assert.equal(resultForAnswer(q, response('Mars'), undefined, [], 1000).verdict, 'correct')
+  assert.equal(resultForAnswer(q, response('Venus'), undefined, [], 1000).verdict, 'incorrect')
+  assert.equal(resultForAnswer(q, undefined, undefined, [], 1000).verdict, 'unanswered')
   const manual = { ...q, type: 'free', answer: undefined }
-  assert.deepEqual(resultForAnswer(manual, response('A creative reply'), undefined, [], 1000), { points: 0, verdict: 'pending' })
-  assert.deepEqual(resultForAnswer(manual, response('A creative reply'), { points: 500 }, [], 1000), { points: 500, verdict: 'partial' })
+  assert.equal(resultForAnswer(manual, response('A creative reply'), undefined, [], 1000).verdict, 'pending')
+  assert.equal(resultForAnswer(manual, response('A creative reply'), { points: 500, verdict: 'partial', detail: 'Host awarded partial credit', source: 'manual' }, [], 1000).points, 500)
   const anagram = { ...q, type: 'anagram', answer: 'Platypus' }
-  assert.deepEqual(resultForAnswer(anagram, response('platypus'), undefined, [], -27000), { points: 500, verdict: 'correct' })
-  const speed = { ...q, scoreMode: 'time' }
-  assert.deepEqual(resultForAnswer(speed, response('Mars'), undefined, [], -27000), { points: 500, verdict: 'correct' })
+  assert.equal(resultForAnswer(anagram, response('platypus'), undefined, [], -27000).verdict, 'correct')
   assert.equal(answerLabel({ France: 'Paris', Italy: 'Rome' }), 'France → Paris · Italy → Rome')
 })
 
@@ -118,5 +123,5 @@ test('closest-answer reveal uses the submitted field, including ties', () => {
   ]
   assert.equal(resultForAnswer(q, replies[0], undefined, replies, 1000).verdict, 'correct')
   assert.equal(resultForAnswer(q, replies[1], undefined, replies, 1000).verdict, 'correct')
-  assert.equal(resultForAnswer(q, replies[2], undefined, replies, 1000).verdict, 'incorrect')
+  assert.equal(resultForAnswer(q, replies[2], undefined, replies, 1000).verdict, 'partial')
 })

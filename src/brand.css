@@ -450,3 +450,9 @@
 
 @media(max-width:760px){.home-nav .brand .xp-logo{width:185px}.sidebar .brand .xp-logo{width:50px;overflow:hidden}.sidebar .brand .xp-logo>.xp-logo-image{width:138px;max-width:none}.host-portal-step{align-items:flex-start}.screen-brand-block .xp-logo{width:165px}}
 @media(max-width:470px){.xp-logo{width:220px}.xp-logo.compact{width:155px}.player-brand-block .xp-logo{width:220px}}
+/* The header stays at the top while remaining in layout, so it cannot cover the slide. */
+.theme-surface.screen>.screen-top{position:sticky;top:0;flex:0 0 auto;min-height:0;padding:11px 3vw 9px;background:linear-gradient(180deg,#050912dc 0%,#07101bc4 72%,#07101b80 100%);backdrop-filter:blur(6px)}
+.theme-surface.screen>.screen-top .xp-logo.compact{width:150px}
+.theme-surface.screen>.screen-top .screen-event strong{font-size:clamp(18px,2vw,29px)}
+.theme-surface.screen>.screen-top .screen-event small{margin-top:4px;font-size:9px}
+.theme-surface.screen>.screen-content{padding-top:12px}

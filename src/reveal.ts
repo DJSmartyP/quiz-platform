@@ -1,7 +1,8 @@
-import { effectiveScoreMode, scoreAnswer, timeScaledPoints, type Game, type Grade, type Question, type Response } from './model.ts'
+import { type Game, type Grade, type GradeVerdict, type Question, type Response } from './model.ts'
+import { scoreQuestion } from './scoring.ts'
 
-export type Verdict = 'correct' | 'partial' | 'incorrect' | 'pending'
-export type OwnResult = { points: number; verdict: Verdict }
+export type Verdict = GradeVerdict
+export type OwnResult = Pick<Grade, 'points' | 'verdict' | 'detail' | 'rank' | 'rankTotal' | 'metrics' | 'source'>
 
 export function answerLabel(value: unknown): string {
   if (value === undefined || value === null || value === '') return 'No answer submitted'
@@ -11,30 +12,29 @@ export function answerLabel(value: unknown): string {
   return String(value)
 }
 
+export function resultForGrade(grade: Grade): OwnResult {
+  const { points, verdict, detail, rank, rankTotal, metrics, source } = grade
+  return { points, verdict, detail, rank, rankTotal, metrics, source }
+}
+
+/** Compatibility helper for local previews. Live results always use the authoritative stored Grade. */
 export function resultForAnswer(question: Question, response: Response | undefined, grade: Grade | undefined, responses: Response[], openedAt?: number): OwnResult {
-  if (!response) return { points: 0, verdict: 'incorrect' }
-  if (question.type === 'free' && !grade) return { points: 0, verdict: 'pending' }
-  const elapsed = Math.max(0, (response.submittedAt - (openedAt || response.submittedAt)) / 1000)
-  let points = grade?.points ?? scoreAnswer(question, response.value, Math.max(0, (response.submittedAt - (openedAt || response.submittedAt)) / 1000))
-  if (question.type === 'closest' && !grade) {
-    const distances = responses.filter(item => item.questionId === question.id && item.value !== '').map(item => Math.abs(Number(item.value) - Number(question.answer))).filter(Number.isFinite)
-    points = distances.length && Math.abs(Number(response.value) - Number(question.answer)) === Math.min(...distances)
-      ? timeScaledPoints(question, question.points, elapsed) : 0
-  }
-  if (question.type === 'free') return { points, verdict: points <= 0 ? 'incorrect' : effectiveScoreMode(question) === 'time' || points >= question.points ? 'correct' : 'partial' }
-  if (question.type === 'closest') return { points, verdict: points > 0 ? 'correct' : 'incorrect' }
-  // Judge correctness with fixed scoring so a correct speed-scored response is
-  // still shown as correct even when its time-adjusted award is below the maximum.
-  const correctnessPoints = scoreAnswer({ ...question, scoreMode: 'fixed' }, response.value, 0)
-  return { points, verdict: correctnessPoints >= question.points ? 'correct' : correctnessPoints > 0 ? 'partial' : 'incorrect' }
+  if (grade) return resultForGrade(grade)
+  const playerId = response?.playerId || '__unanswered__'
+  const relevant = response && !responses.some(item => item.playerId === response.playerId && item.questionId === response.questionId) ? [...responses, response] : responses
+  const eligible = [...new Set([...relevant.map(item => item.playerId), playerId])]
+  const calculated = scoreQuestion(question, relevant, eligible, { openedAt }).find(item => item.playerId === playerId)!
+  return resultForGrade(calculated)
 }
 
 export function ownResultForGame(game: Game, playerId: string): OwnResult {
   const question = game.questions[game.questionIndex]
+  const grade = game.grades.find(item => item.playerId === playerId && item.questionId === question.id)
+  if (grade) return resultForGrade(grade)
   return resultForAnswer(
     question,
     game.responses.find(response => response.playerId === playerId && response.questionId === question.id),
-    game.grades.find(grade => grade.playerId === playerId && grade.questionId === question.id),
+    undefined,
     game.responses,
     game.openedAt,
   )

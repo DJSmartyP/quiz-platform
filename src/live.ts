@@ -2,9 +2,10 @@ import { initializeApp } from 'firebase/app'
 import { browserLocalPersistence, getAuth, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup, signOut, type Auth, type User } from 'firebase/auth'
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, limit, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch, type Unsubscribe } from 'firebase/firestore'
 import { advanceGame, breakGame, resumeGame } from './gameEngine'
-import { currentQuestion, isLastQuestionInRound, timeScaledPoints, type Game, type Player, type Response } from './model'
+import { currentQuestion, isLastQuestionInRound, type Game, type Player, type Response } from './model'
 import { publicGame } from './publicGame'
-import { resultForAnswer, type OwnResult } from './reveal'
+import { resultForGrade, type OwnResult } from './reveal'
+import { roundScore } from './scoring'
 import { getGame, receiveLiveGame, receiveOwnLiveResponse, type QuizTemplate } from './store'
 
 // Firebase web configuration is public; Firestore rules enforce access.
@@ -31,7 +32,7 @@ sessionStorage.setItem('quiz-host-controller-id', controllerId)
 
 type PublicDocument = { hostUid: string; controllerId: string; memberUids: string[]; stateVersion: number; answerCount?: number; game: Game; openedAtServer?: { toMillis(): number } }
 type PrivateDocument = { hostUid: string; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
-type HostCommand = { type: 'advance' | 'break' | 'resume' | 'void' | 'grade' | 'end'; playerId?: string; points?: number }
+type HostCommand = { type: 'advance' | 'break' | 'resume' | 'void' | 'grade' | 'grade-all-zero' | 'end'; playerId?: string; points?: number }
 export type LiveSessionRecord = {
   code: string
   ownerUid: string
@@ -45,6 +46,20 @@ let liveHostCode: string | null = null
 let playerConnection: { code: string; uid: string; stop: () => void } | null = null
 const codeAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const adminEmail = 'nickpatel.trainer@gmail.com'
+
+function normaliseResponse(data: Record<string, unknown>): Response {
+  const timestamp = data.submittedAtServer as { seconds?: number; nanoseconds?: number; toMillis?: () => number } | undefined
+  const submittedAtServer = timestamp && Number.isFinite(timestamp.seconds) && Number.isFinite(timestamp.nanoseconds)
+    ? { seconds: Number(timestamp.seconds), nanoseconds: Number(timestamp.nanoseconds) }
+    : undefined
+  return {
+    playerId: String(data.playerId || ''),
+    questionId: String(data.questionId || ''),
+    value: data.value,
+    submittedAt: submittedAtServer ? submittedAtServer.seconds * 1000 + submittedAtServer.nanoseconds / 1_000_000 : Number(data.submittedAt || timestamp?.toMillis?.() || 0),
+    submittedAtServer,
+  }
+}
 export type HostAccount = {
   uid: string
   displayName: string
@@ -392,7 +407,7 @@ export async function startLiveHost(onStatus: (message: string, canControl: bool
       responses = []
       stopResponses?.()
       stopResponses = onSnapshot(query(collection(hostDb, 'liveGames', code, 'responses'), where('questionId', '==', questionId)), result => {
-        responses = result.docs.map(item => item.data() as Response)
+        responses = result.docs.map(item => normaliseResponse(item.data()))
         renderHost()
       }, error => onStatus(`Answer sync error: ${error.message}`, false))
     }
@@ -435,7 +450,7 @@ export async function inspectAdminSession(): Promise<Game> {
   const questionId = currentQuestion(game)?.id
   const answers = questionId ? await getDocs(query(collection(hostDb, 'liveGames', code, 'responses'), where('questionId', '==', questionId))) : null
   const roster = players.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0 }))
-  return { ...withRoster(game, roster), responses: answers?.docs.map(item => item.data() as Response) || [] }
+  return { ...withRoster(game, roster), responses: answers?.docs.map(item => normaliseResponse(item.data())) || [] }
 }
 
 export async function liveHostCommand(expectedVersion: number, command: HostCommand) {
@@ -448,10 +463,10 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
   const prior = getGame()
   const questionId = prior.questions[prior.questionIndex]?.id
   const playerSnapshot = await getDocs(collection(hostDb, 'liveGames', code, 'players'))
-  const responseSnapshot = (command.type === 'advance' && ['closed', 'reveal'].includes(prior.phase) || command.type === 'grade' && prior.phase === 'reveal') && questionId
+  const responseSnapshot = (command.type === 'advance' && ['closed', 'reveal'].includes(prior.phase) || ['grade', 'grade-all-zero'].includes(command.type) && prior.phase === 'reveal') && questionId
     ? await getDocs(query(collection(hostDb, 'liveGames', code, 'responses'), where('questionId', '==', questionId))) : null
   const roster = playerSnapshot.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0 } as Player))
-  const responses = responseSnapshot?.docs.map(item => item.data() as Response) || []
+  const responses = responseSnapshot?.docs.map(item => normaliseResponse(item.data())) || []
   await runTransaction(hostDb, async tx => {
     const publicSnap = await tx.get(publicRef)
     const privateSnap = await tx.get(privateRef)
@@ -480,11 +495,18 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
     else if (command.type === 'grade' && command.playerId) {
       next = structuredClone(base)
       const question = currentQuestion(next)
-      const response = responses.find(item => item.playerId === command.playerId && item.questionId === questionId)
-      const elapsed = response ? (response.submittedAt - (next.openedAt || response.submittedAt)) / 1000 : 0
-      const points = timeScaledPoints(question, Math.max(0, Math.round(command.points || 0)), elapsed)
+      const points = Math.min(roundScore(question.points), roundScore(Number(command.points) || 0))
       next.grades = next.grades.filter(g => !(g.playerId === command.playerId && g.questionId === questionId))
-      next.grades.push({ playerId: command.playerId, questionId, points, committed: false })
+      next.grades.push({ playerId: command.playerId, questionId, points, committed: false, verdict: points >= question.points ? 'correct' : points > 0 ? 'partial' : 'incorrect', detail: points >= question.points ? 'Host awarded full credit' : points > 0 ? 'Host awarded partial credit' : 'Host awarded no credit', source: question.type === 'free' ? 'manual' : 'override' })
+      next.stateVersion += 1
+    } else if (command.type === 'grade-all-zero') {
+      next = structuredClone(base)
+      const eligible = next.questionEligiblePlayerIds || next.players.map(player => player.id)
+      for (const playerId of eligible) {
+        if (!responses.some(response => response.playerId === playerId) || next.grades.some(grade => grade.playerId === playerId && grade.questionId === questionId && grade.verdict !== 'pending')) continue
+        next.grades = next.grades.filter(grade => !(grade.playerId === playerId && grade.questionId === questionId))
+        next.grades.push({ playerId, questionId, points: 0, committed: false, verdict: 'incorrect', detail: 'Host awarded no credit', source: 'manual' })
+      }
       next.stateVersion += 1
     } else if (command.type === 'void') {
       next = structuredClone(base)
@@ -511,21 +533,19 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
     if (ending) {
       tx.set(sessionRef, { code, ownerUid: uid, title: next.title, status: 'ended', endedAt: serverTimestamp(), deleteAfterMs }, { merge: true })
     }
-    if (next.phase === 'reveal' && (base.phase === 'closed' || command.type === 'grade')) {
+    if (next.phase === 'reveal' && (base.phase === 'closed' || ['grade', 'grade-all-zero'].includes(command.type))) {
       const question = currentQuestion(next)
       for (const player of next.players) {
         if (command.type === 'grade' && player.id !== command.playerId) continue
-        const response = responses.find(item => item.playerId === player.id && item.questionId === question.id)
         const grade = next.grades.find(item => item.playerId === player.id && item.questionId === question.id)
-        const result = resultForAnswer(question, response, grade, responses, next.openedAt)
-        tx.set(doc(hostDb, 'liveGames', code, 'results', `${player.id}_${question.id}`), { playerId: player.id, questionId: question.id, ...result })
+        if (!grade) continue
+        tx.set(doc(hostDb, 'liveGames', code, 'results', `${player.id}_${question.id}`), { playerId: player.id, questionId: question.id, ...serialise(resultForGrade(grade)) })
       }
     } else if (command.type === 'advance' && base.phase === 'reveal') {
       for (const player of next.players) {
         const grade = next.grades.find(item => item.playerId === player.id && item.questionId === questionId && item.committed)
         if (!grade) continue
-        const result = resultForAnswer(currentQuestion(next), responses.find(item => item.playerId === player.id && item.questionId === questionId), grade, responses, next.openedAt)
-        tx.set(doc(hostDb, 'liveGames', code, 'results', `${player.id}_${questionId}`), { playerId: player.id, questionId, ...result })
+        tx.set(doc(hostDb, 'liveGames', code, 'results', `${player.id}_${questionId}`), { playerId: player.id, questionId, ...serialise(resultForGrade(grade)) })
       }
     }
   })
@@ -599,13 +619,17 @@ export async function joinLiveGame(code: string, name: string, avatarId: string,
     stopResponse = onSnapshot(doc(playerDb, 'liveGames', upper, 'responses', `${uid}_${questionId}`), { includeMetadataChanges: true }, own => {
       if (own.metadata.hasPendingWrites || own.metadata.fromCache) return
       onError('')
-      receiveOwnLiveResponse(own.exists() ? own.data() as Response : null)
+      receiveOwnLiveResponse(own.exists() ? normaliseResponse(own.data()) : null)
       onReady(questionId)
     }, error => retryOrReport('Answer status unavailable', error))
     stopResult = onSnapshot(doc(playerDb, 'liveGames', upper, 'results', `${uid}_${questionId}`), own => {
       if (!own.metadata.hasPendingWrites) {
         onError('')
-        onResult(own.exists() ? { points: Number(own.data().points), verdict: own.data().verdict as OwnResult['verdict'] } : null)
+        onResult(own.exists() ? {
+          points: Number(own.data().points), verdict: own.data().verdict as OwnResult['verdict'], detail: String(own.data().detail || ''),
+          rank: own.data().rank === undefined ? undefined : Number(own.data().rank), rankTotal: own.data().rankTotal === undefined ? undefined : Number(own.data().rankTotal),
+          metrics: own.data().metrics || undefined, source: own.data().source || 'automatic',
+        } : null)
       }
     }, error => retryOrReport('Result unavailable', error))
   }
@@ -657,7 +681,7 @@ export async function submitLiveAnswer(value: unknown) {
     if (existing.exists()) throw new Error('Your answer is already locked in.')
     saved = { playerId: uid, questionId: question.id, value, submittedAt: Date.now() }
     tx.update(publicRef, { answerCount: Number(current.data().answerCount || 0) + 1 })
-    tx.set(responseRef, saved)
+    tx.set(responseRef, { ...saved, submittedAtServer: serverTimestamp() })
   })
   if (saved) receiveOwnLiveResponse(saved) // The transaction promise is the server acknowledgement.
 }

@@ -1,5 +1,8 @@
 export type QuestionType = 'single' | 'multi' | 'boolean' | 'text' | 'free' | 'number' | 'closest' | 'ordering' | 'matching' | 'categorise' | 'list' | 'anagram' | 'photo-reveal' | 'photo-zoom'
+/** Retained only so older exported quiz packs can still be imported. */
 export type ScoreMode = 'fixed' | 'time'
+export type PlacementMode = 'none' | 'fastest-correct'
+export type NumberBand = { tolerance: number; fraction: number }
 export type QuizTheme = 'quiz-show' | 'western' | 'neon-sci-fi' | 'arcane-fantasy' | 'monster-mash' | 'celebration' | 'retro-sports' | 'pixel-cinema' | 'world-tour' | 'synthwave-festival' | 'deep-sea' | 'detective-noir'
 
 export type ThemeSceneCopy = {
@@ -88,6 +91,8 @@ export type Question = {
   prompt: string
   points: number
   scoreMode?: ScoreMode
+  placementMode?: PlacementMode
+  numberBands?: NumberBand[]
   duration?: number
   options?: string[]
   items?: string[]
@@ -102,8 +107,21 @@ export type Question = {
 }
 
 export type Player = { id: string; name: string; avatarId: string; score: number }
-export type Response = { playerId: string; questionId: string; value: unknown; submittedAt: number }
-export type Grade = { playerId: string; questionId: string; points: number; committed: boolean }
+export type ServerOrder = { seconds: number; nanoseconds: number }
+export type Response = { playerId: string; questionId: string; value: unknown; submittedAt: number; submittedAtServer?: ServerOrder }
+export type GradeVerdict = 'correct' | 'partial' | 'incorrect' | 'pending' | 'unanswered'
+export type Grade = {
+  playerId: string
+  questionId: string
+  points: number
+  committed: boolean
+  verdict: GradeVerdict
+  detail: string
+  rank?: number
+  rankTotal?: number
+  metrics?: Record<string, number | string | boolean>
+  source: 'automatic' | 'manual' | 'override'
+}
 export type Phase = 'lobby' | 'round-intro' | 'question' | 'open' | 'closed' | 'reveal' | 'scores' | 'round-scores' | 'leaderboard' | 'final' | 'thanks' | 'break' | 'closed-game'
 export type Game = {
   code: string
@@ -125,6 +143,7 @@ export type Game = {
   grades: Grade[]
   questions: Question[]
   answerCount?: number
+  questionEligiblePlayerIds?: string[]
 }
 
 export const typeNames: Record<QuestionType, string> = {
@@ -226,7 +245,7 @@ export const sampleQuestions: Question[] = [
   { id: 'q9', round: 'ROUND 2 · THINK FAST', type: 'matching', prompt: 'Match each country to its capital.', items: ['France', 'Italy', 'Spain'], options: ['Paris', 'Rome', 'Madrid'], answer: { France: 'Paris', Italy: 'Rome', Spain: 'Madrid' }, points: 1200, duration: 45 },
   { id: 'q10', round: 'ROUND 2 · THINK FAST', type: 'categorise', prompt: 'Sort these into the right category.', items: ['Apple', 'Carrot', 'Banana', 'Pea'], categories: ['Fruit', 'Vegetable'], answer: { Apple: 'Fruit', Carrot: 'Vegetable', Banana: 'Fruit', Pea: 'Vegetable' }, points: 1200, duration: 45 },
   { id: 'q11', round: 'ROUND 2 · THINK FAST', type: 'list', prompt: 'Name the three primary colours of light.', answer: ['Red', 'Green', 'Blue'], points: 1200, duration: 45 },
-  { id: 'q12', round: 'ROUND 2 · THINK FAST', type: 'anagram', prompt: 'Unscramble the word.', answer: 'Platypus', points: 1000, scoreMode: 'time', duration: 30 },
+  { id: 'q12', round: 'ROUND 2 · THINK FAST', type: 'anagram', prompt: 'Unscramble the word.', answer: 'Platypus', points: 1000, duration: 30 },
 ]
 
 export const freshGame = (): Game => ({
@@ -261,62 +280,10 @@ export function isAnswerComplete(q: Question, answer: unknown): boolean {
   }
   if (q.type === 'ordering') return Boolean(q.items?.length) && Array.isArray(answer) && q.items!.every(item => answer.includes(item))
   if (q.type === 'list') {
-    const expected = Array.isArray(q.answer) ? q.answer.length : 3
-    return expected > 0 && Array.isArray(answer) && Array.from({ length: expected }, (_, index) => index).every(index => typeof answer[index] === 'string' && Boolean(answer[index].trim()))
+    return Array.isArray(answer) && answer.some(item => typeof item === 'string' && Boolean(item.trim()))
   }
   if (q.type === 'multi') return Array.isArray(answer) && answer.length > 0
   return typeof answer === 'string' ? Boolean(answer.trim()) : answer !== undefined && answer !== null
-}
-
-export const effectiveScoreMode = (q: Question): ScoreMode => q.scoreMode || (q.type === 'anagram' ? 'time' : 'fixed')
-
-/** Speed scoring awards the full value immediately and half the value at the buzzer. */
-export function timeScaledPoints(q: Question, earnedPoints: number, elapsedSeconds = 0): number {
-  if (earnedPoints <= 0 || effectiveScoreMode(q) === 'fixed') return Math.max(0, Math.round(earnedPoints))
-  const duration = Math.max(1, q.duration ?? 30)
-  const elapsed = Math.min(duration, Math.max(0, elapsedSeconds))
-  return Math.max(0, Math.round(earnedPoints * (1 - elapsed / duration * 0.5)))
-}
-
-export function scoreAnswer(q: Question, value: unknown, elapsedSeconds = 0): number {
-  if (value === undefined || value === null || value === '') return 0
-  const full = q.points
-  const award = (points: number) => timeScaledPoints(q, points, elapsedSeconds)
-  switch (q.type) {
-    case 'single': return value === q.answer ? award(full) : 0
-    case 'boolean': return value === q.answer ? award(full) : 0
-    case 'multi': {
-      const correct = (q.answer as string[] || []).map(normalise).sort().join('|')
-      const given = (Array.isArray(value) ? value : []).map(String).map(normalise).sort().join('|')
-      return given === correct ? award(full) : 0
-    }
-    case 'text': {
-      const accepted = Array.isArray(q.answer) ? q.answer : [q.answer]
-      return accepted.some(a => normalise(String(a)) === normalise(String(value))) ? award(full) : 0
-    }
-    case 'photo-reveal':
-    case 'photo-zoom': {
-      const accepted = Array.isArray(q.answer) ? q.answer : [q.answer]
-      return accepted.some(a => normalise(String(a)) === normalise(String(value))) ? award(full) : 0
-    }
-    case 'number': return Math.abs(Number(value) - Number(q.answer)) <= (q.tolerance ?? 0) ? award(full) : 0
-    case 'ordering': return JSON.stringify(value) === JSON.stringify(q.answer) ? award(full) : 0
-    case 'matching':
-    case 'categorise': {
-      const answer = q.answer as Record<string, string>
-      const given = value as Record<string, string>
-      const keys = Object.keys(answer)
-      return award(Math.round(full * keys.filter(k => given?.[k] === answer[k]).length / keys.length))
-    }
-    case 'list': {
-      const expected = (q.answer as string[]).map(normalise)
-      const supplied = new Set((Array.isArray(value) ? value : []).map(String).map(normalise))
-      return award(Math.round(full * expected.filter(a => supplied.has(a)).length / expected.length))
-    }
-    case 'anagram': return normalise(String(value)) === normalise(String(q.answer)) ? award(full) : 0
-    case 'closest':
-    case 'free': return 0
-  }
 }
 
 export function ranked(players: Player[]) {
