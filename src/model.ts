@@ -255,6 +255,18 @@ export const freshGame = (): Game => ({
 })
 
 export const normalise = (text: string) => text.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
+
+/** Stable pseudo-random panel order so every screen reveals the same scattered squares. */
+export const photoTileOrder = (seed: string, count = 24) => {
+  let state = [...seed].reduce((value, character) => Math.imul(value ^ character.charCodeAt(0), 16777619) >>> 0, 2166136261)
+  const order = Array.from({ length: count }, (_, index) => index)
+  for (let index = order.length - 1; index > 0; index -= 1) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+    const swap = state % (index + 1)
+    ;[order[index], order[swap]] = [order[swap], order[index]]
+  }
+  return order
+}
 export const currentQuestion = (game: Game) => game.questions[game.questionIndex]
 export const currentTheme = (game: Game): QuizTheme => {
   if (game.phase === 'lobby') return game.introTheme || game.theme || 'quiz-show'

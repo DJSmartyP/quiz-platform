@@ -321,7 +321,8 @@ export function voidQuestion() {
       if (existing?.committed) player.score -= existing.points
     }
     d.grades = d.grades.filter(g => g.questionId !== q.id)
-    d.phase = isLastQuestionInRound(d) ? 'round-scores' : 'scores'
+    if (isLastQuestionInRound(d)) d.phase = 'round-scores'
+    else { d.questionIndex += 1; d.phase = 'question' }
   })
 }
 export function overrideScore(playerId: string, newTotal: number) {
@@ -330,6 +331,6 @@ export function overrideScore(playerId: string, newTotal: number) {
 export function publicRanks() { return ranked(game.players) }
 export function actionLabel(phase: Phase): string {
   return ({ lobby: 'Start quiz', 'round-intro': 'Show first question', question: 'Open answers', open: 'Close answers',
-    closed: 'Reveal answer', reveal: 'Finalise scores', scores: 'Next question', 'round-scores': 'Show leaderboard', leaderboard: 'Continue', final: 'Thanks for playing',
+    closed: 'Reveal answer', reveal: 'Continue', scores: 'Next question', 'round-scores': 'Show total leaderboard', leaderboard: 'Continue', final: 'Thanks for playing',
     thanks: 'Close session', break: 'Resume quiz', 'closed-game': 'Session closed' } as Record<Phase, string>)[phase]
 }

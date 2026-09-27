@@ -30,7 +30,8 @@ export function advanceGame(previous: Game): Game {
       const player = next.players.find(item => item.id === grade.playerId)
       if (player) player.score += grade.points
     }
-    next.phase = isLastQuestionInRound(next) ? 'round-scores' : 'scores'
+    if (isLastQuestionInRound(next)) next.phase = 'round-scores'
+    else { next.questionIndex += 1; next.phase = 'question' }
   } else if (phase === 'scores') {
     if (isLastQuestionInRound(next)) next.phase = 'round-scores'
     else { next.questionIndex += 1; next.phase = 'question' }

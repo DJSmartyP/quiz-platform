@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { anagramDisplay, currentTheme, isAnswerComplete, sampleQuestions } from '../src/model.ts'
+import { anagramDisplay, currentTheme, isAnswerComplete, photoTileOrder, sampleQuestions } from '../src/model.ts'
 import { normaliseQuestion, scoreQuestion } from '../src/scoring.ts'
 
 const question = type => sampleQuestions.find(item => item.type === type)
@@ -62,6 +62,11 @@ test('anagram waits five seconds then solves deterministic random positions', ()
 test('photo reveal overlay becomes transparent as tiles disappear', async () => {
   const css = await import('node:fs/promises').then(({ readFile }) => readFile(new URL('../src/brand.css', import.meta.url), 'utf8'))
   assert.match(css, /\.photo-cover\{[^}]*background:transparent/)
+  assert.match(css, /\.question-media\.photo-zoom>img\{object-fit:contain/)
+  const first = photoTileOrder('photo-one')
+  const repeated = photoTileOrder('photo-one')
+  assert.deepEqual(first, repeated)
+  assert.notDeepEqual(first, Array.from({ length: 24 }, (_, index) => index))
 })
 
 test('main screen stays inside one viewport and auto-fits oversized question slides', async () => {
@@ -74,7 +79,11 @@ test('main screen stays inside one viewport and auto-fits oversized question sli
   assert.match(css, /\.question-media\{[^}]*height:clamp\(230px,31vh,370px\)[^}]*margin:0 auto 24px/)
   assert.ok(app.includes('new ResizeObserver(fitSlide)'))
   assert.ok(app.includes('slide.style.setProperty(\'--slide-scale\', String(scale))'))
-  assert.ok(app.includes('ref={slideRef} className={`screen-question ${q.imageUrl?"has-media":""}`}'))
+  assert.ok(app.includes('ref={slideRef} className={`screen-question type-${q.type} ${q.imageUrl?"has-media":""}`}'))
+  assert.ok(app.includes('className="screen-question-focus"'))
+  assert.ok(app.includes('className="screen-answer-area"'))
+  assert.ok(app.includes('className="screen-question-status"'))
+  assert.match(css, /\.screen-question-status\{[^}]*flex:0 0 auto[^}]*justify-content:flex-end/)
   assert.ok(app.includes('className="screen-centre round-intro-screen"'))
   assert.match(css, /\.round-intro-screen\{[^}]*justify-content:center/)
 })

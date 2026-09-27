@@ -24,8 +24,6 @@ test('Host phases open controls only after question display and preserve per-rou
   game = advanceGame(game)
   assert.equal(game.phase, 'reveal')
   game = advanceGame(game)
-  assert.equal(game.phase, 'scores')
-  game = advanceGame(game)
   assert.equal(game.questionIndex, 1)
   assert.equal(game.phase, 'question')
 })

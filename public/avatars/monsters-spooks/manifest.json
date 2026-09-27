@@ -7,62 +7,62 @@
     {
       "id": "monsters-spooks-ghost",
       "name": "Ghost",
-      "src": "avatars/monsters-spooks/ghost.png"
+      "src": "avatars/monsters-spooks/ghost.webp"
     },
     {
       "id": "monsters-spooks-goth-ghost",
       "name": "Goth Ghost",
-      "src": "avatars/monsters-spooks/goth-ghost.png"
+      "src": "avatars/monsters-spooks/goth-ghost.webp"
     },
     {
       "id": "monsters-spooks-vampire",
       "name": "Vampire",
-      "src": "avatars/monsters-spooks/vampire.png"
+      "src": "avatars/monsters-spooks/vampire.webp"
     },
     {
       "id": "monsters-spooks-zombie",
       "name": "Zombie",
-      "src": "avatars/monsters-spooks/zombie.png"
+      "src": "avatars/monsters-spooks/zombie.webp"
     },
     {
       "id": "monsters-spooks-mummy",
       "name": "Mummy",
-      "src": "avatars/monsters-spooks/mummy.png"
+      "src": "avatars/monsters-spooks/mummy.webp"
     },
     {
       "id": "monsters-spooks-werewolf",
       "name": "Werewolf",
-      "src": "avatars/monsters-spooks/werewolf.png"
+      "src": "avatars/monsters-spooks/werewolf.webp"
     },
     {
       "id": "monsters-spooks-skeleton",
       "name": "Skeleton",
-      "src": "avatars/monsters-spooks/skeleton.png"
+      "src": "avatars/monsters-spooks/skeleton.webp"
     },
     {
       "id": "monsters-spooks-swamp-creature",
       "name": "Swamp Creature",
-      "src": "avatars/monsters-spooks/swamp-creature.png"
+      "src": "avatars/monsters-spooks/swamp-creature.webp"
     },
     {
       "id": "monsters-spooks-demon",
       "name": "Demon",
-      "src": "avatars/monsters-spooks/demon.png"
+      "src": "avatars/monsters-spooks/demon.webp"
     },
     {
       "id": "monsters-spooks-spooky-doll",
       "name": "Spooky Doll",
-      "src": "avatars/monsters-spooks/spooky-doll.png"
+      "src": "avatars/monsters-spooks/spooky-doll.webp"
     },
     {
       "id": "monsters-spooks-friendly-monster",
       "name": "Friendly Monster",
-      "src": "avatars/monsters-spooks/friendly-monster.png"
+      "src": "avatars/monsters-spooks/friendly-monster.webp"
     },
     {
       "id": "monsters-spooks-party-monster",
       "name": "Party Monster",
-      "src": "avatars/monsters-spooks/party-monster.png"
+      "src": "avatars/monsters-spooks/party-monster.webp"
     }
   ]
 }

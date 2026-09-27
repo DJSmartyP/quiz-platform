@@ -7,62 +7,62 @@
     {
       "id": "fantasy-wizard",
       "name": "Wizard",
-      "src": "avatars/fantasy/wizard.png"
+      "src": "avatars/fantasy/wizard.webp"
     },
     {
       "id": "fantasy-witch",
       "name": "Witch",
-      "src": "avatars/fantasy/witch.png"
+      "src": "avatars/fantasy/witch.webp"
     },
     {
       "id": "fantasy-knight",
       "name": "Knight",
-      "src": "avatars/fantasy/knight.png"
+      "src": "avatars/fantasy/knight.webp"
     },
     {
       "id": "fantasy-rogue",
       "name": "Rogue",
-      "src": "avatars/fantasy/rogue.png"
+      "src": "avatars/fantasy/rogue.webp"
     },
     {
       "id": "fantasy-elf-ranger",
       "name": "Elf Ranger",
-      "src": "avatars/fantasy/elf-ranger.png"
+      "src": "avatars/fantasy/elf-ranger.webp"
     },
     {
       "id": "fantasy-goblin",
       "name": "Goblin",
-      "src": "avatars/fantasy/goblin.png"
+      "src": "avatars/fantasy/goblin.webp"
     },
     {
       "id": "fantasy-dwarf",
       "name": "Dwarf",
-      "src": "avatars/fantasy/dwarf.png"
+      "src": "avatars/fantasy/dwarf.webp"
     },
     {
       "id": "fantasy-bard",
       "name": "Bard",
-      "src": "avatars/fantasy/bard.png"
+      "src": "avatars/fantasy/bard.webp"
     },
     {
       "id": "fantasy-battle-mage",
       "name": "Battle Mage",
-      "src": "avatars/fantasy/battle-mage.png"
+      "src": "avatars/fantasy/battle-mage.webp"
     },
     {
       "id": "fantasy-dragon-person",
       "name": "Dragon Person",
-      "src": "avatars/fantasy/dragon-person.png"
+      "src": "avatars/fantasy/dragon-person.webp"
     },
     {
       "id": "fantasy-enchanted-armour",
       "name": "Enchanted Armour",
-      "src": "avatars/fantasy/enchanted-armour.png"
+      "src": "avatars/fantasy/enchanted-armour.webp"
     },
     {
       "id": "fantasy-forest-sprite",
       "name": "Forest Sprite",
-      "src": "avatars/fantasy/forest-sprite.png"
+      "src": "avatars/fantasy/forest-sprite.webp"
     }
   ]
 }

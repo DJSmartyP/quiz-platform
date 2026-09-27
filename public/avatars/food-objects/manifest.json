@@ -7,62 +7,62 @@
     {
       "id": "food-objects-sentient-pizza",
       "name": "Sentient Pizza",
-      "src": "avatars/food-objects/sentient-pizza.png"
+      "src": "avatars/food-objects/sentient-pizza.webp"
     },
     {
       "id": "food-objects-coffee-cup",
       "name": "Coffee Cup",
-      "src": "avatars/food-objects/coffee-cup.png"
+      "src": "avatars/food-objects/coffee-cup.webp"
     },
     {
       "id": "food-objects-doughnut",
       "name": "Doughnut",
-      "src": "avatars/food-objects/doughnut.png"
+      "src": "avatars/food-objects/doughnut.webp"
     },
     {
       "id": "food-objects-toaster",
       "name": "Toaster",
-      "src": "avatars/food-objects/toaster.png"
+      "src": "avatars/food-objects/toaster.webp"
     },
     {
       "id": "food-objects-traffic-cone",
       "name": "Traffic Cone",
-      "src": "avatars/food-objects/traffic-cone.png"
+      "src": "avatars/food-objects/traffic-cone.webp"
     },
     {
       "id": "food-objects-rubber-duck",
       "name": "Rubber Duck",
-      "src": "avatars/food-objects/rubber-duck.png"
+      "src": "avatars/food-objects/rubber-duck.webp"
     },
     {
       "id": "food-objects-banana",
       "name": "Banana",
-      "src": "avatars/food-objects/banana.png"
+      "src": "avatars/food-objects/banana.webp"
     },
     {
       "id": "food-objects-cactus",
       "name": "Cactus",
-      "src": "avatars/food-objects/cactus.png"
+      "src": "avatars/food-objects/cactus.webp"
     },
     {
       "id": "food-objects-dice",
       "name": "Dice",
-      "src": "avatars/food-objects/dice.png"
+      "src": "avatars/food-objects/dice.webp"
     },
     {
       "id": "food-objects-vhs-tape",
       "name": "VHS Tape",
-      "src": "avatars/food-objects/vhs-tape.png"
+      "src": "avatars/food-objects/vhs-tape.webp"
     },
     {
       "id": "food-objects-popcorn-box",
       "name": "Popcorn Box",
-      "src": "avatars/food-objects/popcorn-box.png"
+      "src": "avatars/food-objects/popcorn-box.webp"
     },
     {
       "id": "food-objects-teapot",
       "name": "Teapot",
-      "src": "avatars/food-objects/teapot.png"
+      "src": "avatars/food-objects/teapot.webp"
     }
   ]
 }

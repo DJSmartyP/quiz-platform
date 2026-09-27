@@ -7,62 +7,62 @@
     {
       "id": "heroes-villains-flying-hero",
       "name": "Flying Hero",
-      "src": "avatars/heroes-villains/flying-hero.png"
+      "src": "avatars/heroes-villains/flying-hero.webp"
     },
     {
       "id": "heroes-villains-tech-hero",
       "name": "Tech Hero",
-      "src": "avatars/heroes-villains/tech-hero.png"
+      "src": "avatars/heroes-villains/tech-hero.webp"
     },
     {
       "id": "heroes-villains-masked-vigilante",
       "name": "Masked Vigilante",
-      "src": "avatars/heroes-villains/masked-vigilante.png"
+      "src": "avatars/heroes-villains/masked-vigilante.webp"
     },
     {
       "id": "heroes-villains-speedster",
       "name": "Speedster",
-      "src": "avatars/heroes-villains/speedster.png"
+      "src": "avatars/heroes-villains/speedster.webp"
     },
     {
       "id": "heroes-villains-sorcerer-hero",
       "name": "Sorcerer Hero",
-      "src": "avatars/heroes-villains/sorcerer-hero.png"
+      "src": "avatars/heroes-villains/sorcerer-hero.webp"
     },
     {
       "id": "heroes-villains-cosmic-hero",
       "name": "Cosmic Hero",
-      "src": "avatars/heroes-villains/cosmic-hero.png"
+      "src": "avatars/heroes-villains/cosmic-hero.webp"
     },
     {
       "id": "heroes-villains-supervillain",
       "name": "Supervillain",
-      "src": "avatars/heroes-villains/supervillain.png"
+      "src": "avatars/heroes-villains/supervillain.webp"
     },
     {
       "id": "heroes-villains-mad-scientist",
       "name": "Mad Scientist",
-      "src": "avatars/heroes-villains/mad-scientist.png"
+      "src": "avatars/heroes-villains/mad-scientist.webp"
     },
     {
       "id": "heroes-villains-shadow-mastermind",
       "name": "Shadow Mastermind",
-      "src": "avatars/heroes-villains/shadow-mastermind.png"
+      "src": "avatars/heroes-villains/shadow-mastermind.webp"
     },
     {
       "id": "heroes-villains-ice-villain",
       "name": "Ice Villain",
-      "src": "avatars/heroes-villains/ice-villain.png"
+      "src": "avatars/heroes-villains/ice-villain.webp"
     },
     {
       "id": "heroes-villains-fire-hero",
       "name": "Fire Hero",
-      "src": "avatars/heroes-villains/fire-hero.png"
+      "src": "avatars/heroes-villains/fire-hero.webp"
     },
     {
       "id": "heroes-villains-gadget-hero",
       "name": "Gadget Hero",
-      "src": "avatars/heroes-villains/gadget-hero.png"
+      "src": "avatars/heroes-villains/gadget-hero.webp"
     }
   ]
 }

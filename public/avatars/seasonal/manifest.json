@@ -7,62 +7,62 @@
     {
       "id": "seasonal-snowman",
       "name": "Snowman",
-      "src": "avatars/seasonal/snowman.png"
+      "src": "avatars/seasonal/snowman.webp"
     },
     {
       "id": "seasonal-festive-elf",
       "name": "Festive Elf",
-      "src": "avatars/seasonal/festive-elf.png"
+      "src": "avatars/seasonal/festive-elf.webp"
     },
     {
       "id": "seasonal-reindeer",
       "name": "Reindeer",
-      "src": "avatars/seasonal/reindeer.png"
+      "src": "avatars/seasonal/reindeer.webp"
     },
     {
       "id": "seasonal-pumpkin",
       "name": "Pumpkin",
-      "src": "avatars/seasonal/pumpkin.png"
+      "src": "avatars/seasonal/pumpkin.webp"
     },
     {
       "id": "seasonal-spooky-ghost",
       "name": "Spooky Ghost",
-      "src": "avatars/seasonal/spooky-ghost.png"
+      "src": "avatars/seasonal/spooky-ghost.webp"
     },
     {
       "id": "seasonal-cupid-character",
       "name": "Cupid Character",
-      "src": "avatars/seasonal/cupid-character.png"
+      "src": "avatars/seasonal/cupid-character.webp"
     },
     {
       "id": "seasonal-fireworks-robot",
       "name": "Fireworks Robot",
-      "src": "avatars/seasonal/fireworks-robot.png"
+      "src": "avatars/seasonal/fireworks-robot.webp"
     },
     {
       "id": "seasonal-easter-bunny",
       "name": "Easter Bunny",
-      "src": "avatars/seasonal/easter-bunny.png"
+      "src": "avatars/seasonal/easter-bunny.webp"
     },
     {
       "id": "seasonal-beach-holiday-character",
       "name": "Beach Holiday Character",
-      "src": "avatars/seasonal/beach-holiday-character.png"
+      "src": "avatars/seasonal/beach-holiday-character.webp"
     },
     {
       "id": "seasonal-autumn-leaf-sprite",
       "name": "Autumn Leaf Sprite",
-      "src": "avatars/seasonal/autumn-leaf-sprite.png"
+      "src": "avatars/seasonal/autumn-leaf-sprite.webp"
     },
     {
       "id": "seasonal-valentine-monster",
       "name": "Valentine Monster",
-      "src": "avatars/seasonal/valentine-monster.png"
+      "src": "avatars/seasonal/valentine-monster.webp"
     },
     {
       "id": "seasonal-new-year-party-bot",
       "name": "New Year Party Bot",
-      "src": "avatars/seasonal/new-year-party-bot.png"
+      "src": "avatars/seasonal/new-year-party-bot.webp"
     }
   ]
 }

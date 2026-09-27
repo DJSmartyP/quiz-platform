@@ -7,62 +7,62 @@
     {
       "id": "pirates-adventurers-pirate-captain",
       "name": "Pirate Captain",
-      "src": "avatars/pirates-adventurers/pirate-captain.png"
+      "src": "avatars/pirates-adventurers/pirate-captain.webp"
     },
     {
       "id": "pirates-adventurers-navigator",
       "name": "Navigator",
-      "src": "avatars/pirates-adventurers/navigator.png"
+      "src": "avatars/pirates-adventurers/navigator.webp"
     },
     {
       "id": "pirates-adventurers-treasure-hunter",
       "name": "Treasure Hunter",
-      "src": "avatars/pirates-adventurers/treasure-hunter.png"
+      "src": "avatars/pirates-adventurers/treasure-hunter.webp"
     },
     {
       "id": "pirates-adventurers-jungle-explorer",
       "name": "Jungle Explorer",
-      "src": "avatars/pirates-adventurers/jungle-explorer.png"
+      "src": "avatars/pirates-adventurers/jungle-explorer.webp"
     },
     {
       "id": "pirates-adventurers-archaeologist",
       "name": "Archaeologist",
-      "src": "avatars/pirates-adventurers/archaeologist.png"
+      "src": "avatars/pirates-adventurers/archaeologist.webp"
     },
     {
       "id": "pirates-adventurers-sailor",
       "name": "Sailor",
-      "src": "avatars/pirates-adventurers/sailor.png"
+      "src": "avatars/pirates-adventurers/sailor.webp"
     },
     {
       "id": "pirates-adventurers-sea-monster",
       "name": "Sea Monster",
-      "src": "avatars/pirates-adventurers/sea-monster.png"
+      "src": "avatars/pirates-adventurers/sea-monster.webp"
     },
     {
       "id": "pirates-adventurers-parrot-person",
       "name": "Parrot Person",
-      "src": "avatars/pirates-adventurers/parrot-person.png"
+      "src": "avatars/pirates-adventurers/parrot-person.webp"
     },
     {
       "id": "pirates-adventurers-cartographer",
       "name": "Cartographer",
-      "src": "avatars/pirates-adventurers/cartographer.png"
+      "src": "avatars/pirates-adventurers/cartographer.webp"
     },
     {
       "id": "pirates-adventurers-desert-explorer",
       "name": "Desert Explorer",
-      "src": "avatars/pirates-adventurers/desert-explorer.png"
+      "src": "avatars/pirates-adventurers/desert-explorer.webp"
     },
     {
       "id": "pirates-adventurers-cave-adventurer",
       "name": "Cave Adventurer",
-      "src": "avatars/pirates-adventurers/cave-adventurer.png"
+      "src": "avatars/pirates-adventurers/cave-adventurer.webp"
     },
     {
       "id": "pirates-adventurers-treasure-map-keeper",
       "name": "Treasure Map Keeper",
-      "src": "avatars/pirates-adventurers/treasure-map-keeper.png"
+      "src": "avatars/pirates-adventurers/treasure-map-keeper.webp"
     }
   ]
 }

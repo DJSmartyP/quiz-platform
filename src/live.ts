@@ -515,7 +515,8 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
         if (grade?.committed) player.score = Math.max(0, player.score - grade.points)
       }
       next.grades = next.grades.filter(g => g.questionId !== questionId)
-      next.phase = isLastQuestionInRound(next) ? 'round-scores' : 'scores'
+      if (isLastQuestionInRound(next)) next.phase = 'round-scores'
+      else { next.questionIndex += 1; next.phase = 'question' }
       next.stateVersion += 1
     }
     if (next === base) return

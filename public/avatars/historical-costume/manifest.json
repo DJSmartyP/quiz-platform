@@ -7,62 +7,62 @@
     {
       "id": "historical-costume-victorian-inventor",
       "name": "Victorian Inventor",
-      "src": "avatars/historical-costume/victorian-inventor.png"
+      "src": "avatars/historical-costume/victorian-inventor.webp"
     },
     {
       "id": "historical-costume-roman-soldier",
       "name": "Roman Soldier",
-      "src": "avatars/historical-costume/roman-soldier.png"
+      "src": "avatars/historical-costume/roman-soldier.webp"
     },
     {
       "id": "historical-costume-medieval-noble",
       "name": "Medieval Noble",
-      "src": "avatars/historical-costume/medieval-noble.png"
+      "src": "avatars/historical-costume/medieval-noble.webp"
     },
     {
       "id": "historical-costume-1920s-detective",
       "name": "1920s Detective",
-      "src": "avatars/historical-costume/1920s-detective.png"
+      "src": "avatars/historical-costume/1920s-detective.webp"
     },
     {
       "id": "historical-costume-cowboy",
       "name": "Cowboy",
-      "src": "avatars/historical-costume/cowboy.png"
+      "src": "avatars/historical-costume/cowboy.webp"
     },
     {
       "id": "historical-costume-samurai-inspired-warrior",
       "name": "Samurai Inspired Warrior",
-      "src": "avatars/historical-costume/samurai-inspired-warrior.png"
+      "src": "avatars/historical-costume/samurai-inspired-warrior.webp"
     },
     {
       "id": "historical-costume-pharaoh-inspired-character",
       "name": "Pharaoh Inspired Character",
-      "src": "avatars/historical-costume/pharaoh-inspired-character.png"
+      "src": "avatars/historical-costume/pharaoh-inspired-character.webp"
     },
     {
       "id": "historical-costume-court-jester",
       "name": "Court Jester",
-      "src": "avatars/historical-costume/court-jester.png"
+      "src": "avatars/historical-costume/court-jester.webp"
     },
     {
       "id": "historical-costume-renaissance-artist",
       "name": "Renaissance Artist",
-      "src": "avatars/historical-costume/renaissance-artist.png"
+      "src": "avatars/historical-costume/renaissance-artist.webp"
     },
     {
       "id": "historical-costume-explorer-captain",
       "name": "Explorer Captain",
-      "src": "avatars/historical-costume/explorer-captain.png"
+      "src": "avatars/historical-costume/explorer-captain.webp"
     },
     {
       "id": "historical-costume-regency-socialite",
       "name": "Regency Socialite",
-      "src": "avatars/historical-costume/regency-socialite.png"
+      "src": "avatars/historical-costume/regency-socialite.webp"
     },
     {
       "id": "historical-costume-ancient-scholar",
       "name": "Ancient Scholar",
-      "src": "avatars/historical-costume/ancient-scholar.png"
+      "src": "avatars/historical-costume/ancient-scholar.webp"
     }
   ]
 }

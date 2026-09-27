@@ -7,62 +7,62 @@
     {
       "id": "animals-fox",
       "name": "Fox",
-      "src": "avatars/animals/fox.png"
+      "src": "avatars/animals/fox.webp"
     },
     {
       "id": "animals-cat",
       "name": "Cat",
-      "src": "avatars/animals/cat.png"
+      "src": "avatars/animals/cat.webp"
     },
     {
       "id": "animals-dog",
       "name": "Dog",
-      "src": "avatars/animals/dog.png"
+      "src": "avatars/animals/dog.webp"
     },
     {
       "id": "animals-raccoon",
       "name": "Raccoon",
-      "src": "avatars/animals/raccoon.png"
+      "src": "avatars/animals/raccoon.webp"
     },
     {
       "id": "animals-bear",
       "name": "Bear",
-      "src": "avatars/animals/bear.png"
+      "src": "avatars/animals/bear.webp"
     },
     {
       "id": "animals-frog",
       "name": "Frog",
-      "src": "avatars/animals/frog.png"
+      "src": "avatars/animals/frog.webp"
     },
     {
       "id": "animals-owl",
       "name": "Owl",
-      "src": "avatars/animals/owl.png"
+      "src": "avatars/animals/owl.webp"
     },
     {
       "id": "animals-shark",
       "name": "Shark",
-      "src": "avatars/animals/shark.png"
+      "src": "avatars/animals/shark.webp"
     },
     {
       "id": "animals-dinosaur",
       "name": "Dinosaur",
-      "src": "avatars/animals/dinosaur.png"
+      "src": "avatars/animals/dinosaur.webp"
     },
     {
       "id": "animals-penguin",
       "name": "Penguin",
-      "src": "avatars/animals/penguin.png"
+      "src": "avatars/animals/penguin.webp"
     },
     {
       "id": "animals-axolotl",
       "name": "Axolotl",
-      "src": "avatars/animals/axolotl.png"
+      "src": "avatars/animals/axolotl.webp"
     },
     {
       "id": "animals-capybara",
       "name": "Capybara",
-      "src": "avatars/animals/capybara.png"
+      "src": "avatars/animals/capybara.webp"
     }
   ]
 }
