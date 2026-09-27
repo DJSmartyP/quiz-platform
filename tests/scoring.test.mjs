@@ -82,6 +82,18 @@ test('free responses remain pending until a manual grade is preserved', () => {
   assert.deepEqual(scoreQuestion(question, [response], ['p'], { existingGrades: [manual] })[0], manual)
 })
 
+test('text answers auto-mark accepted wording and queue other wording for Host verification', () => {
+  const question = base('text', ['Edinburgh', 'Edinburgh City'])
+  const exact = scoreQuestion(question, [reply(question, 'exact', ' edinburgh ')], ['exact'])[0]
+  const review = scoreQuestion(question, [reply(question, 'review', 'Auld Reekie')], ['review'])[0]
+  assert.equal(exact.verdict, 'correct')
+  assert.equal(exact.points, 1000)
+  assert.equal(review.verdict, 'pending')
+  assert.match(review.detail, /Host verification/)
+  const manual = { playerId: 'review', questionId: question.id, points: 1000, committed: false, verdict: 'correct', detail: 'Host awarded full credit', source: 'override' }
+  assert.deepEqual(scoreQuestion(question, [reply(question, 'review', 'Auld Reekie')], ['review'], { existingGrades: [manual] })[0], manual)
+})
+
 test('player instructions state both the mechanic and the scoring rule', () => {
   const closest = base('closest', 100)
   assert.match(questionInstruction(closest), /Closest position|closest position/i)

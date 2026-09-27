@@ -496,3 +496,4 @@
 
 /* Avoid eagerly decoding every large transparent avatar in the picker. */
 .avatar-grid button{content-visibility:auto;contain-intrinsic-size:96px}
+.response-card .card-title>div{display:flex;flex-direction:column;gap:4px}.card-subtitle{color:var(--qf-muted);font-size:10px}.answer-row{flex-wrap:wrap}.answer-row.needs-verification{background:color-mix(in srgb,var(--qf-heat) 7%,transparent);margin-inline:-10px;padding-inline:10px;border-radius:4px}.answer-row .response-value{min-width:160px}.answer-row .mark-buttons{margin-left:auto}.mark-buttons button.selected{outline:2px solid currentColor;outline-offset:1px;box-shadow:0 0 0 2px #fff}.answer-row .badge{white-space:nowrap}

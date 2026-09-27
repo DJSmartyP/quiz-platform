@@ -463,7 +463,7 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
   const prior = getGame()
   const questionId = prior.questions[prior.questionIndex]?.id
   const playerSnapshot = await getDocs(collection(hostDb, 'liveGames', code, 'players'))
-  const responseSnapshot = (command.type === 'advance' && ['closed', 'reveal'].includes(prior.phase) || ['grade', 'grade-all-zero'].includes(command.type) && prior.phase === 'reveal') && questionId
+  const responseSnapshot = (command.type === 'advance' && ['closed', 'reveal'].includes(prior.phase) || ['grade', 'grade-all-zero'].includes(command.type)) && questionId
     ? await getDocs(query(collection(hostDb, 'liveGames', code, 'responses'), where('questionId', '==', questionId))) : null
   const roster = playerSnapshot.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0 } as Player))
   const responses = responseSnapshot?.docs.map(item => normaliseResponse(item.data())) || []
@@ -495,6 +495,7 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
     else if (command.type === 'grade' && command.playerId) {
       next = structuredClone(base)
       const question = currentQuestion(next)
+      if (!responses.some(response => response.playerId === command.playerId && response.questionId === questionId)) throw new Error('That Player answer is no longer available to mark.')
       const points = Math.min(roundScore(question.points), roundScore(Number(command.points) || 0))
       next.grades = next.grades.filter(g => !(g.playerId === command.playerId && g.questionId === questionId))
       next.grades.push({ playerId: command.playerId, questionId, points, committed: false, verdict: points >= question.points ? 'correct' : points > 0 ? 'partial' : 'incorrect', detail: points >= question.points ? 'Host awarded full credit' : points > 0 ? 'Host awarded partial credit' : 'Host awarded no credit', source: question.type === 'free' ? 'manual' : 'override' })

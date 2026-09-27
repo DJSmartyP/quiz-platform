@@ -37,7 +37,7 @@ export const questionInstruction = (question: Question): string => question.plac
   single: 'Pick the correct answer · Correct = full points.',
   multi: 'Select every correct answer · Wrong selections reduce your score.',
   boolean: 'Choose True or False · Correct = full points.',
-  text: 'Type the correct answer · Correct = full points.',
+  text: 'Type your answer · Accepted answers score automatically; the Host checks other wording.',
   free: 'Write your answer · The Host awards 0%, 50% or 100%.',
   number: 'Enter your best answer · The closer you are, the more you score.',
   closest: 'Guess the number · Points are awarded by closest position.',
@@ -54,6 +54,7 @@ export function scoringSummary(question: Question): string {
   const maximum = `${roundScore(question.points).toLocaleString()} max`
   if (question.placementMode === 'fastest-correct') return `${maximum} · Fastest correct`
   if (question.type === 'free') return `${maximum} · Host judged 0 / 50 / 100%`
+  if (question.type === 'text') return `${maximum} · Auto match + Host verification`
   if (question.type === 'closest') return `${maximum} · Closest position`
   if (['anagram', 'photo-reveal', 'photo-zoom'].includes(question.type)) return `${maximum} · Earlier solve scores more`
   if (['multi', 'number', 'ordering', 'matching', 'categorise', 'list'].includes(question.type)) return `${maximum} · Partial credit available`
@@ -89,7 +90,7 @@ export function competitionRanks<T>(items: T[], compare: (a: T, b: T) => number,
     .map((entry, index, ranked) => ({ ...entry, rank: entry.rank || ranked[index - 1].rank }))
 }
 
-function accepted(question: Question, value: unknown) {
+export function answerMatches(question: Question, value: unknown) {
   const answers = Array.isArray(question.answer) ? question.answer : [question.answer]
   return answers.some(answer => answer !== undefined && normalise(String(answer)) === normalise(String(value ?? '')))
 }
@@ -126,8 +127,14 @@ function automaticGrade(question: Question, response: Response | undefined, open
   const maximum = roundScore(question.points)
   const value = response.value
   if (question.type === 'free') return { ...common, points: 0, verdict: 'pending', detail: 'Waiting for Host marking' }
-  if (question.type === 'single' || question.type === 'boolean' || question.type === 'text') {
-    const correct = question.type === 'text' ? accepted(question, value) : value === question.answer
+  if (question.type === 'text') {
+    const correct = answerMatches(question, value)
+    return correct
+      ? { ...common, points: maximum, verdict: 'correct', detail: 'Matched an accepted answer' }
+      : { ...common, points: 0, verdict: 'pending', detail: 'Needs Host verification' }
+  }
+  if (question.type === 'single' || question.type === 'boolean') {
+    const correct = value === question.answer
     return { ...common, points: correct ? maximum : 0, verdict: correct ? 'correct' : 'incorrect', detail: correct ? 'Correct answer' : 'Incorrect answer' }
   }
   if (question.type === 'multi') {
@@ -183,7 +190,7 @@ function automaticGrade(question: Question, response: Response | undefined, open
     return { ...common, points, verdict: verdictFor(points, maximum), detail: `${found} of ${expected.length} answers found`, metrics: { accuracy, found, totalAnswers: expected.length } }
   }
   if (question.type === 'anagram' || question.type === 'photo-reveal' || question.type === 'photo-zoom') {
-    const correct = accepted(question, value)
+    const correct = answerMatches(question, value)
     if (!correct) return { ...common, points: 0, verdict: 'incorrect', detail: 'Incorrect answer' }
     const reveal = progressiveRevealProgress(question, response, openedAt)
     const fraction = 1 - 0.8 * reveal.progress
