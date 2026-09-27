@@ -122,7 +122,7 @@ export type Grade = {
   metrics?: Record<string, number | string | boolean>
   source: 'automatic' | 'manual' | 'override'
 }
-export type Phase = 'lobby' | 'round-intro' | 'question' | 'open' | 'closed' | 'reveal' | 'scores' | 'round-scores' | 'leaderboard' | 'final' | 'thanks' | 'break' | 'closed-game'
+export type Phase = 'lobby' | 'round-intro' | 'question' | 'open' | 'closed' | 'reveal' | 'scores' | 'round-scores' | 'leaderboard' | 'final' | 'podium' | 'thanks' | 'break' | 'closed-game'
 export type Game = {
   code: string
   title: string
@@ -137,6 +137,7 @@ export type Game = {
   allowLateJoins: boolean
   openedAt?: number
   closesAt?: number
+  timerExtensionMs?: number
   closedAt?: number
   players: Player[]
   responses: Response[]
@@ -270,7 +271,7 @@ export const photoTileOrder = (seed: string, count = 24) => {
 export const currentQuestion = (game: Game) => game.questions[game.questionIndex]
 export const currentTheme = (game: Game): QuizTheme => {
   if (game.phase === 'lobby') return game.introTheme || game.theme || 'quiz-show'
-  if (['final', 'thanks', 'closed-game'].includes(game.phase)) return game.exitTheme || game.theme || 'quiz-show'
+  if (['final', 'podium', 'thanks', 'closed-game'].includes(game.phase)) return game.exitTheme || game.theme || 'quiz-show'
   const roundPhase = ['round-intro', 'question', 'open', 'closed', 'reveal', 'scores', 'round-scores', 'leaderboard', 'break'].includes(game.phase)
   return roundPhase ? game.roundThemes?.[currentQuestion(game)?.round] || game.theme || 'quiz-show' : game.theme || 'quiz-show'
 }

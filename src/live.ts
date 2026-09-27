@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app'
 import { browserLocalPersistence, getAuth, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup, signOut, type Auth, type User } from 'firebase/auth'
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, limit, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch, type Unsubscribe } from 'firebase/firestore'
-import { advanceGame, breakGame, resumeGame } from './gameEngine'
+import { advanceGame, breakGame, extendAnswerTime, resumeGame, setLateJoining } from './gameEngine'
 import { currentQuestion, isLastQuestionInRound, type Game, type Player, type Response } from './model'
 import { publicGame } from './publicGame'
 import { resultForGrade, type OwnResult } from './reveal'
@@ -32,7 +32,7 @@ sessionStorage.setItem('quiz-host-controller-id', controllerId)
 
 type PublicDocument = { hostUid: string; controllerId: string; memberUids: string[]; stateVersion: number; answerCount?: number; game: Game; openedAtServer?: { toMillis(): number } }
 type PrivateDocument = { hostUid: string; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
-type HostCommand = { type: 'advance' | 'break' | 'resume' | 'void' | 'grade' | 'grade-all-zero' | 'end'; playerId?: string; points?: number }
+type HostCommand = { type: 'advance' | 'break' | 'resume' | 'void' | 'grade' | 'grade-all-zero' | 'extend' | 'late-joins' | 'end'; playerId?: string; points?: number; enabled?: boolean }
 export type LiveSessionRecord = {
   code: string
   ownerUid: string
@@ -359,7 +359,7 @@ function timedGame(data: PublicDocument | PrivateDocument): Game {
   const game = { ...data.game, answerCount: 'answerCount' in data ? data.answerCount || 0 : data.game.answerCount || 0 }
   if (!openedAt || !game.openedAt) return game
   const duration = game.questions[game.questionIndex]?.duration || 30
-  return { ...game, openedAt, closesAt: openedAt + duration * 1000 }
+  return { ...game, openedAt, closesAt: openedAt + duration * 1000 + Number(game.timerExtensionMs || 0) }
 }
 
 export async function startLiveHost(onStatus: (message: string, canControl: boolean) => void, allowPopup = true, fresh = false, claimControl = true) {
@@ -492,6 +492,14 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
       next.closedAt = Date.now()
       next.stateVersion += 1
     }
+    else if (command.type === 'extend') {
+      if (base.phase !== 'open') throw new Error('Time can only be added while answers are open.')
+      if (base.closesAt && Date.now() >= base.closesAt) throw new Error('Answers have already closed.')
+      next = extendAnswerTime(base)
+    }
+    else if (command.type === 'late-joins') {
+      next = setLateJoining(base, Boolean(command.enabled))
+    }
     else if (command.type === 'grade' && command.playerId) {
       next = structuredClone(base)
       const question = currentQuestion(next)
@@ -572,7 +580,7 @@ export function followLiveScreen(code: string, onError: (message: string) => voi
   return () => { stopGame(); stopRoster() }
 }
 
-export async function joinLiveGame(code: string, name: string, avatarId: string, onReady: (questionId: string) => void, onResult: (result: OwnResult | null) => void, onError: (message: string) => void) {
+export async function joinLiveGame(code: string, name: string, avatarId: string, onReady: (questionId: string) => void, onResult: (result: OwnResult | null) => void, onError: (message: string) => void, onConnection?: (connected: boolean) => void) {
   const upper = code.trim().toUpperCase()
   const publicRef = doc(playerDb, 'liveGames', upper)
   if (!(await getDoc(publicRef)).exists()) return null
@@ -636,8 +644,9 @@ export async function joinLiveGame(code: string, name: string, avatarId: string,
     }, error => retryOrReport('Result unavailable', error))
   }
   const stopGame = onSnapshot(publicRef, snap => {
-    if (!snap.exists()) { onError('This game is no longer available.'); return }
+    if (!snap.exists()) { onConnection?.(false); onError('This game is no longer available.'); return }
     onError('')
+    onConnection?.(true)
     publicState = timedGame(snap.data() as PublicDocument)
     render()
     const questionId = publicState.questions[publicState.questionIndex]?.id
@@ -647,7 +656,7 @@ export async function joinLiveGame(code: string, name: string, avatarId: string,
       onResult(null)
       watchOwnQuestion(questionId)
     }
-  }, error => onError(`Game sync unavailable: ${error.message}`))
+  }, error => { onConnection?.(false); onError(`Game sync unavailable: ${error.message}`) })
   stopRoster = onSnapshot(collection(playerDb, 'liveGames', upper, 'players'), result => {
     roster = result.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0 }))
     render()
@@ -658,13 +667,13 @@ export async function joinLiveGame(code: string, name: string, avatarId: string,
   return uid
 }
 
-export async function reconnectLivePlayer(code: string, onReady: (questionId: string) => void, onResult: (result: OwnResult | null) => void, onError: (message: string) => void) {
+export async function reconnectLivePlayer(code: string, onReady: (questionId: string) => void, onResult: (result: OwnResult | null) => void, onError: (message: string) => void, onConnection?: (connected: boolean) => void) {
   const upper = code.toUpperCase()
   if (localStorage.getItem('quiz-live-player-code') !== upper) return null
   const uid = await playerUid()
   const existing = await getDoc(doc(playerDb, 'liveGames', upper, 'players', uid))
   if (!existing.exists()) return null
-  return joinLiveGame(upper, existing.data().name, existing.data().avatarId, onReady, onResult, onError)
+  return joinLiveGame(upper, existing.data().name, existing.data().avatarId, onReady, onResult, onError, onConnection)
 }
 
 export async function submitLiveAnswer(value: unknown) {

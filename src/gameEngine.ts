@@ -11,6 +11,7 @@ export function advanceGame(previous: Game): Game {
     next.phase = 'open'
     next.openedAt = Date.now()
     next.closesAt = next.openedAt + (next.questions[next.questionIndex].duration || 30) * 1000
+    next.timerExtensionMs = 0
     next.closedAt = undefined
     next.questionEligiblePlayerIds = next.players.map(player => player.id)
   } else if (phase === 'open') { next.phase = 'closed'; next.closedAt = Date.now() }
@@ -39,7 +40,8 @@ export function advanceGame(previous: Game): Game {
   else if (phase === 'leaderboard') {
     if (next.questionIndex === next.questions.length - 1) next.phase = 'final'
     else { next.questionIndex += 1; next.phase = 'round-intro' }
-  } else if (phase === 'final') next.phase = 'thanks'
+  } else if (phase === 'final') next.phase = 'podium'
+  else if (phase === 'podium') next.phase = 'thanks'
   else if (phase === 'thanks') next.phase = 'closed-game'
   else return previous
   next.stateVersion += 1
@@ -56,4 +58,19 @@ export function resumeGame(previous: Game): Game {
   const next = { ...previous, phase: previous.returnPhase || 'scores', stateVersion: previous.stateVersion + 1 }
   delete next.returnPhase
   return next
+}
+
+export function extendAnswerTime(previous: Game, milliseconds = 10_000): Game {
+  if (previous.phase !== 'open' || milliseconds <= 0) return previous
+  return {
+    ...previous,
+    timerExtensionMs: Number(previous.timerExtensionMs || 0) + milliseconds,
+    closesAt: Number(previous.closesAt || Date.now()) + milliseconds,
+    stateVersion: previous.stateVersion + 1,
+  }
+}
+
+export function setLateJoining(previous: Game, enabled: boolean): Game {
+  if (previous.allowLateJoins === enabled) return previous
+  return { ...previous, allowLateJoins: enabled, stateVersion: previous.stateVersion + 1 }
 }

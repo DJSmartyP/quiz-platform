@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { HashRouter, Link, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom'
-import { ArrowRight, Check, CircleHelp, Clock3, Copy, Download, Edit3, ExternalLink, Gamepad2, House, ImagePlus, LayoutDashboard, MonitorPlay, Play, Plus, ShieldCheck, Sparkles, Trash2, Trophy, Upload, Users } from 'lucide-react'
+import { ArrowRight, Check, CircleHelp, Clock3, Copy, Download, Edit3, ExternalLink, Gamepad2, House, ImagePlus, LayoutDashboard, Maximize2, MonitorPlay, Play, Plus, ShieldCheck, Sparkles, Trash2, Trophy, Upload, Users, Wifi, WifiOff } from 'lucide-react'
 import { anagramDisplay, currentQuestion, currentTheme, gradeFor, isAnswerComplete, normalise, photoTileOrder, quizThemes, ranked, rankedRound, responseFor, roundPoints, scrambleWord, typeNames, type Game, type Player, type Question, type QuestionType, type QuizTheme } from './model'
 import { actionLabel, createQuiz, deleteQuiz, duplicateQuiz, expireAnswers, getActiveQuizTemplate, getLiveRole, getQuizLibrarySnapshot, importQuiz, leaveLiveRole, replaceQuizLibrary, scopeQuizWorkspace, selectQuiz, setQuizTheme, update, useGame, useQuizLibrary, type QuizTemplate } from './store'
 import { beginHostPopup, cleanupExpiredSessions, deleteLiveSession, deleteQuizTemplateCloud, followLiveScreen, hasHostSession, joinLiveGame, liveHostCommand, reconnectLivePlayer, restoreHostAccount, saveQuizTemplateCloud, signOutHost, startLiveHost, submitLiveAnswer, syncQuizLibrary, takeLiveControl, type HostAccount } from './live'
@@ -150,6 +150,26 @@ function validateQuestionDraft(question: Question) {
   if (['photo-reveal', 'photo-zoom'].includes(question.type) && !String(question.answer || '').trim()) return 'Enter the correct photo answer.'
   return ''
 }
+function quizPreflight(title: string, questions: Question[]) {
+  const issues: string[] = []
+  if (!title.trim()) issues.push('Give the quiz a name.')
+  if (!questions.length) issues.push('Add at least one question.')
+  questions.forEach((question, index) => {
+    const invalid = validateQuestionDraft(question)
+    if (invalid) issues.push(`Question ${index + 1}: ${invalid}`)
+    if (!question.round.trim()) issues.push(`Question ${index + 1}: add a round name.`)
+    if (question.options && new Set(question.options.map(option => normalise(option))).size !== question.options.length) issues.push(`Question ${index + 1}: answer options must be unique.`)
+    if (question.imageUrl && !question.imageUrl.startsWith('data:') && !/^https:\/\//i.test(question.imageUrl)) issues.push(`Question ${index + 1}: image URLs must use HTTPS.`)
+  })
+  const seen = new Set<string>()
+  let previous = ''
+  for (const question of questions) {
+    if (question.round !== previous && seen.has(question.round)) issues.push(`Round “${question.round}” is split into separate blocks. Keep each round's questions together.`)
+    seen.add(question.round)
+    previous = question.round
+  }
+  return [...new Set(issues)]
+}
 function readQuizPack(text: string): { title: string; theme: QuizTheme; introTheme: QuizTheme; exitTheme: QuizTheme; roundThemes: Record<string, QuizTheme>; questions: Question[] } {
   if (text.length > 900_000) throw new Error('This quiz pack is too large to store safely.')
   const parsed = JSON.parse(text) as Record<string, unknown>
@@ -172,6 +192,29 @@ function readQuizPack(text: string): { title: string; theme: QuizTheme; introThe
   const exitTheme = quizThemeIds.includes(source.exitTheme as QuizTheme) ? source.exitTheme as QuizTheme : theme
   const roundThemes = Object.fromEntries(Object.entries(source.roundThemes && typeof source.roundThemes === 'object' ? source.roundThemes as Record<string, unknown> : {}).filter(([, value]) => quizThemeIds.includes(value as QuizTheme))) as Record<string, QuizTheme>
   return { title: source.title.trim(), theme, introTheme, exitTheme, roundThemes, questions }
+}
+
+function useWakeLock(active: boolean) {
+  useEffect(() => {
+    if (!active) return
+    type WakeLockSentinel = { release: () => Promise<void>; released?: boolean }
+    const wakeLock = (navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinel> } }).wakeLock
+    if (!wakeLock) return
+    let sentinel: WakeLockSentinel | null = null
+    let cancelled = false
+    const request = async () => {
+      if (document.visibilityState !== 'visible' || cancelled) return
+      try { sentinel = await wakeLock.request('screen') } catch { /* Unsupported or declined by the device. */ }
+    }
+    const visible = () => { if (!sentinel || sentinel.released) void request() }
+    void request()
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', visible)
+      void sentinel?.release().catch(() => undefined)
+    }
+  }, [active])
 }
 const HostAccountContext = createContext<HostAccount | null>(null)
 function HostGate({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
@@ -463,7 +506,7 @@ function Organiser() {
   </main></Shell>
 }
 function Editor() {
-  const game = useGame(), library = useQuizLibrary(), nav = useNavigate(), [selected, setSelected] = useState(0), [draft, setDraft] = useState(game.questions[0]), [titleDraft, setTitleDraft] = useState(game.title), [themeDraft, setThemeDraft] = useState<QuizTheme>(game.theme || 'quiz-show'), [introThemeDraft, setIntroThemeDraft] = useState<QuizTheme>(game.introTheme || game.theme || 'quiz-show'), [exitThemeDraft, setExitThemeDraft] = useState<QuizTheme>(game.exitTheme || game.theme || 'quiz-show'), [roundThemeDraft, setRoundThemeDraft] = useState<QuizTheme | ''>(game.roundThemes?.[game.questions[0]?.round] || ''), [saved, setSaved] = useState(false), [validation, setValidation] = useState(''), [imageBusy, setImageBusy] = useState(false)
+  const game = useGame(), library = useQuizLibrary(), nav = useNavigate(), [selected, setSelected] = useState(0), [draft, setDraft] = useState(game.questions[0]), [titleDraft, setTitleDraft] = useState(game.title), [themeDraft, setThemeDraft] = useState<QuizTheme>(game.theme || 'quiz-show'), [introThemeDraft, setIntroThemeDraft] = useState<QuizTheme>(game.introTheme || game.theme || 'quiz-show'), [exitThemeDraft, setExitThemeDraft] = useState<QuizTheme>(game.exitTheme || game.theme || 'quiz-show'), [roundThemeDraft, setRoundThemeDraft] = useState<QuizTheme | ''>(game.roundThemes?.[game.questions[0]?.round] || ''), [saved, setSaved] = useState(false), [saving, setSaving] = useState(false), [savedAt, setSavedAt] = useState(''), [validation, setValidation] = useState(''), [preflightIssues, setPreflightIssues] = useState<string[] | null>(null), [imageBusy, setImageBusy] = useState(false)
   useEffect(() => { setDraft(game.questions[selected] || game.questions[0]); setSaved(false) }, [selected, game.questions])
   useEffect(() => { setTitleDraft(game.title); setThemeDraft(game.theme || 'quiz-show'); setIntroThemeDraft(game.introTheme || game.theme || 'quiz-show'); setExitThemeDraft(game.exitTheme || game.theme || 'quiz-show') }, [game.title, game.theme, game.introTheme, game.exitTheme])
   useEffect(() => { setRoundThemeDraft(game.roundThemes?.[game.questions[selected]?.round] || '') }, [selected, game.questions, game.roundThemes])
@@ -480,6 +523,7 @@ function Editor() {
   const roundNames = [...new Set(game.questions.map(question => question.round))]
   const originalRound = game.questions[selected]?.round || draft.round
   const roundQuestionCount = game.questions.filter(question => question.round === originalRound).length
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(game.questions[selected]) || titleDraft !== game.title || themeDraft !== game.theme || introThemeDraft !== (game.introTheme || game.theme) || exitThemeDraft !== (game.exitTheme || game.theme) || roundThemeDraft !== (game.roundThemes?.[draft.round] || '')
   const save = async () => {
     const word = String(draft.answer || '').trim()
     if (!titleDraft.trim()) { setValidation('Enter a quiz name.'); return }
@@ -488,6 +532,7 @@ function Editor() {
     const mediaSize = game.questions.reduce((total, question, index) => total + (index === selected ? draft.imageUrl?.length || 0 : question.imageUrl?.length || 0), 0)
     if (mediaSize > 650_000) { setValidation('This quiz contains too much uploaded image data. Use hosted image URLs or remove an image.'); return }
     const prepared = normaliseQuestion(draft.type === 'anagram' ? {...draft, round: draft.round.trim(), answer: word, duration: Math.max(10, draft.duration || 30), scramble: scrambleWord(word)} : {...draft, round: draft.round.trim()})
+    setSaving(true)
     update(gameDraft => {
       gameDraft.title = titleDraft.trim()
       gameDraft.theme = themeDraft
@@ -503,9 +548,11 @@ function Editor() {
     try {
       if (template) await saveQuizTemplateCloud(template)
       setValidation('')
+      setSavedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
     } catch (error) {
       setValidation(`Saved in this browser, but cloud sync failed: ${(error as Error).message}`)
     }
+    finally { setSaving(false) }
     setSaved(true)
     setTimeout(() => setSaved(false), 2200)
   }
@@ -555,16 +602,42 @@ function Editor() {
     catch (error) { setValidation((error as Error).message) }
     finally { setImageBusy(false) }
   }
+  const duplicateRound = async () => {
+    if (isDirty) { setValidation('Save the current question before duplicating this round.'); return }
+    const suggested = `${originalRound} COPY`
+    const nextName = prompt('Name the duplicated round', suggested)?.trim()
+    if (!nextName) return
+    if (roundNames.includes(nextName)) { setValidation('Choose a new round name for the duplicated round.'); return }
+    const source = game.questions.filter(question => question.round === originalRound)
+    const insertAt = game.questions.map(question => question.round).lastIndexOf(originalRound) + 1
+    update(gameDraft => {
+      const copies = source.map(question => ({ ...structuredClone(question), id: crypto.randomUUID(), round: nextName }))
+      gameDraft.questions.splice(insertAt, 0, ...copies)
+      if (gameDraft.roundThemes?.[originalRound]) gameDraft.roundThemes[nextName] = gameDraft.roundThemes[originalRound]
+    })
+    setSelected(insertAt)
+    try {
+      const template = getActiveQuizTemplate()
+      if (template) await saveQuizTemplateCloud(template)
+      setValidation(`Duplicated ${originalRound} as ${nextName}.`)
+      setSavedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+    } catch (error) { setValidation(`Round duplicated in this browser, but cloud sync failed: ${(error as Error).message}`) }
+  }
+  const runPreflight = () => {
+    const questions = game.questions.map((question, index) => index === selected ? normaliseQuestion({ ...draft, round: draft.round.trim() }) : question)
+    setPreflightIssues(quizPreflight(titleDraft, questions))
+  }
   const previewTheme = roundThemeDraft || themeDraft
   return <Shell active="Quiz editor"><main className="page editor-page">
-    <div className="page-heading"><div><div className="eyebrow dark">QUIZ EDITOR</div><h1>{game.title}</h1><p>Name rounds, mix question types, and add optional picture stages.</p></div><Button onClick={addQuestion}><Plus size={17}/> Add question</Button></div>
+    <div className="page-heading"><div><div className="eyebrow dark">QUIZ EDITOR</div><h1>{game.title}</h1><p>Name rounds, mix question types, and add optional picture stages.</p><span className={`editor-save-state ${isDirty ? 'dirty' : 'ready'}`}>{saving ? 'Saving…' : isDirty ? 'Unsaved changes' : savedAt ? `Saved at ${savedAt}` : 'Saved in this browser'}</span></div><div className="host-head-actions"><Button variant="secondary" onClick={runPreflight}><ShieldCheck size={17}/> Check quiz</Button><Button onClick={addQuestion}><Plus size={17}/> Add question</Button></div></div>
+    {preflightIssues&&<div className={`preflight-report ${preflightIssues.length?'has-issues':'ready'}`}><strong>{preflightIssues.length ? `${preflightIssues.length} item${preflightIssues.length===1?'':'s'} to check` : 'Quiz ready to host'}</strong>{preflightIssues.length?<ul>{preflightIssues.map(issue=><li key={issue}>{issue}</li>)}</ul>:<span>Every question has the information needed to run.</span>}<button onClick={()=>setPreflightIssues(null)}>Close</button></div>}
     <div className="editor-grid">
       <div className="editor-list"><div className="editor-list-head"><strong>Questions</strong><span>{countLabel(roundNames.length, 'round')} · {countLabel(game.questions.length, 'question')}</span></div>{game.questions.map((question,index) => <button key={question.id} className={`question-row ${selected===index?'chosen':''}`} onClick={() => setSelected(index)}><span className="question-number">{String(index+1).padStart(2,'0')}</span><span><strong>{question.prompt}</strong><small>{question.round} · {typeNames[question.type]}</small></span></button>)}</div>
       <div className="editor-form">
         <div className="form-top"><div><Badge>{draft.round}</Badge><h2>Question {selected+1}</h2></div><Badge tone="gray">{scoringSummary(draft)}</Badge></div>
         <label htmlFor="question-type">Question type<select id="question-type" value={draft.type} onChange={event=>setDraft(changeQuestionType(draft,event.target.value as QuestionType))}>{questionTypes.map(type=><option key={type} value={type}>{typeNames[type]}</option>)}</select></label>
         <label htmlFor="question-prompt">Question prompt<textarea id="question-prompt" value={draft.prompt} onChange={event=>setDraft({...draft,prompt:event.target.value})}/></label>
-        <div className="editor-round-card"><div><small>ROUND</small><strong>{originalRound}</strong><span>{roundQuestionCount} {roundQuestionCount === 1 ? 'question' : 'questions'} scored together</span></div><Button variant="secondary" onClick={renameRound} disabled={draft.round.trim() === originalRound}>Rename whole round</Button></div>
+        <div className="editor-round-card"><div><small>ROUND</small><strong>{originalRound}</strong><span>{roundQuestionCount} {roundQuestionCount === 1 ? 'question' : 'questions'} scored together</span></div><div className="editor-round-actions"><Button variant="secondary" onClick={()=>void duplicateRound()}><Copy size={15}/> Duplicate round</Button><Button variant="secondary" onClick={renameRound} disabled={draft.round.trim() === originalRound}>Rename whole round</Button></div></div>
         <div className="editor-round-row">
           <label>Assign to round<select value={roundNames.includes(draft.round) ? draft.round : '__custom'} onChange={event => { if (event.target.value !== '__custom') { const round = event.target.value; setDraft({...draft,round}); setRoundThemeDraft(game.roundThemes?.[round] || '') } }}>{roundNames.map(name=><option key={name} value={name}>{name}</option>)}<option value="__custom">New round…</option></select></label>
           <label>Round name<input value={draft.round} onChange={event=>setDraft({...draft,round:event.target.value})} placeholder="ROUND 1 · WARM UP"/><small className="field-help">Questions with the same name form one round.</small></label>
@@ -573,7 +646,7 @@ function Editor() {
         <details className="editor-settings">
           <summary><span><strong>Quiz appearance</strong><small>Quiz name, default, intro and exit themes</small></span><span>Open settings</span></summary>
           <div className="editor-settings-body">
-            <div className="editor-identity-row"><label>Quiz name<input value={titleDraft} onChange={event=>setTitleDraft(event.target.value)} placeholder="My brilliant quiz"/></label><label>Default round theme<select value={themeDraft} onChange={event=>setThemeDraft(event.target.value as QuizTheme)}>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small className="field-help">Used by every round unless that round overrides it.</small></label><label>Intro theme<select value={introThemeDraft} onChange={event=>setIntroThemeDraft(event.target.value as QuizTheme)}>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small className="field-help">Used for the lobby and start of this quiz.</small></label><label>Exit theme<select value={exitThemeDraft} onChange={event=>setExitThemeDraft(event.target.value as QuizTheme)}>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small className="field-help">Used for final scores and the thank-you screen.</small></label></div>
+            <div className="editor-identity-row"><label>Quiz name<input value={titleDraft} onChange={event=>setTitleDraft(event.target.value)} placeholder="My brilliant quiz"/></label><label>Default round theme<select value={themeDraft} onChange={event=>setThemeDraft(event.target.value as QuizTheme)}>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small className="field-help">Used by every round unless that round overrides it.</small></label><label>Intro theme<select value={introThemeDraft} onChange={event=>setIntroThemeDraft(event.target.value as QuizTheme)}>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small className="field-help">Used for the lobby and start of this quiz.</small></label><label>Exit theme<select value={exitThemeDraft} onChange={event=>setExitThemeDraft(event.target.value as QuizTheme)}>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small className="field-help">Used for final scores, the winners podium and the thank-you screen.</small></label></div>
             <div className={`theme-picker theme-${previewTheme}`} style={themeSurfaceStyle(previewTheme)}><div><small>{roundThemeDraft?'ROUND THEME OVERRIDE':'QUIZ DEFAULT THEME'}</small><strong>{quizThemes[previewTheme].name}</strong><span className="theme-font-preview">Question One · Ready to Play?</span><span>{quizThemes[previewTheme].description}</span></div></div>
           </div>
         </details>
@@ -598,12 +671,12 @@ function Editor() {
         <div className="editor-note"><Trophy size={18}/><span><strong>{scoringSummary(draft)}</strong><br/>{questionInstruction(draft)}</span></div>
         <div className="editor-note"><CircleHelp size={18}/> A round can contain any number and mix of question types. XP Studio shows round scores after the final consecutive question in that round, then carries those points into the overall leaderboard.</div>
         <div className="editor-order-actions"><Button variant="secondary" onClick={duplicate}><Plus size={16}/> Duplicate</Button><Button variant="secondary" disabled={selected===0} onClick={()=>move(-1)}>Move up</Button><Button variant="secondary" disabled={selected===game.questions.length-1} onClick={()=>move(1)}>Move down</Button><Button variant="danger" disabled={game.questions.length<=1} onClick={deleteQuestion}><Trash2 size={15}/> Delete</Button></div>
-        <div className="form-actions editor-save-bar"><Button onClick={()=>void save()}>{saved?<><Check size={17}/> Saved</>:<>Save question <ArrowRight size={17}/></>}</Button><Link className="text-link" to="/host">Go to Host <ArrowRight size={16}/></Link></div>
+        <div className="form-actions editor-save-bar"><Button onClick={()=>void save()} disabled={saving}>{saving?<>Saving…</>:saved&&!isDirty?<><Check size={17}/> Saved</>:<>Save question <ArrowRight size={17}/></>}</Button><Link className="text-link" to="/host">Go to Host <ArrowRight size={16}/></Link></div>
       </div>
     </div>
   </main></Shell>
 }
-const phaseNames: Record<string,string> = {lobby:'Lobby', 'round-intro':'Round introduction', question:'Question display', open:'Answers open', closed:'Answers closed', reveal:'Answer reveal', scores:'Question complete', 'round-scores':'Round scores', leaderboard:'Overall leaderboard', final:'Final leaderboard', thanks:'Thank you', break:'Break', 'closed-game':'Session closed'}
+const phaseNames: Record<string,string> = {lobby:'Lobby', 'round-intro':'Round introduction', question:'Question display', open:'Answers open', closed:'Answers closed', reveal:'Answer reveal', scores:'Question complete', 'round-scores':'Round scores', leaderboard:'Overall leaderboard', final:'Final leaderboard', podium:'Winners podium', thanks:'Thank you', break:'Break', 'closed-game':'Session closed'}
 function friendlyAuthError(error: unknown) {
   const detail = error as { code?: string; message?: string }
   if (detail.code === 'auth/popup-blocked') return 'Your browser blocked Google sign-in. Allow popups for XP Studio and try again.'
@@ -622,9 +695,10 @@ function friendlyPlayerError(error: unknown) {
   return message.replace(/^Firebase:\s*/i, '') || 'Something interrupted the connection. Please try again.'
 }
 function Host() {
-  const game = useGame(), packs = usePacks(), q = currentQuestion(game), [copied,setCopied]=useState<'screen'|'portal'|''>('')
+  const game = useGame(), packs = usePacks(), q = currentQuestion(game), [copied,setCopied]=useState<'screen'|'portal'|'invite'|''>('')
   const [liveStatus, setLiveStatus] = useState(''), [canControl, setCanControl] = useState(false), [liveBusy, setLiveBusy] = useState(false)
   const [endedCode, setEndedCode] = useState('')
+  const [responseFilter, setResponseFilter] = useState<'all'|'review'|'marked'|'automatic'|'unanswered'>('all')
   const stopLive = useRef<(() => void) | null>(null)
   const answered = q ? game.responses.filter(r=>r.questionId===q.id) : []
   const responseRows = answered.map(response => {
@@ -640,12 +714,21 @@ function Host() {
   const pendingReviewCount = responseRows.filter(row => row.needsVerification && !row.grade).length
   const markedCount = responseRows.filter(row => row.needsVerification && row.grade).length
   const automaticCount = responseRows.filter(row => !row.needsVerification).length
+  const eligibleIds = game.questionEligiblePlayerIds || game.players.map(player => player.id)
+  const unansweredPlayers = game.players.filter(player => eligibleIds.includes(player.id) && !answered.some(response => response.playerId === player.id))
+  const visibleResponseRows = responseRows.filter(row => responseFilter === 'all' || responseFilter === 'review' && row.needsVerification && !row.grade || responseFilter === 'marked' && row.needsVerification && Boolean(row.grade) || responseFilter === 'automatic' && !row.needsVerification)
   const next = actionLabel(game.phase)
   const liveConnected = getLiveRole() === 'host'
   const portalUrl = `${location.origin}${location.pathname}#/join`
   const screenUrl = `${location.origin}${location.pathname}#/screen/${game.code}`
-  const copy = async (kind: 'screen' | 'portal') => {
-    await navigator.clipboard.writeText(kind === 'screen' ? screenUrl : portalUrl)
+  useEffect(() => {
+    if (!liveConnected || game.phase === 'closed-game') return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [liveConnected, game.phase])
+  const copy = async (kind: 'screen' | 'portal' | 'invite') => {
+    await navigator.clipboard.writeText(kind === 'screen' ? screenUrl : kind === 'portal' ? portalUrl : `Join ${game.title} on XP Play\n${portalUrl}\nGame code: ${game.code}`)
     setCopied(kind)
     setTimeout(()=>setCopied(''),1800)
   }
@@ -697,7 +780,7 @@ function Host() {
     } catch (error) { setLiveStatus(`New game failed: ${(error as Error).message}`) }
     finally { setLiveBusy(false) }
   }
-  const liveAction = async (type: 'advance' | 'break' | 'resume' | 'void' | 'grade' | 'grade-all-zero' | 'end', extras: { playerId?: string; points?: number } = {}) => {
+  const liveAction = async (type: 'advance' | 'break' | 'resume' | 'void' | 'grade' | 'grade-all-zero' | 'extend' | 'late-joins' | 'end', extras: { playerId?: string; points?: number; enabled?: boolean } = {}) => {
     if (liveBusy || !canControl) return
     if (type === 'advance' && game.phase === 'reveal') {
       const pending = game.grades.filter(grade => grade.questionId === q.id && grade.verdict === 'pending').length
@@ -741,6 +824,7 @@ function Host() {
           <a className="btn secondary" href={screenUrl} target="_blank" rel="noreferrer"><MonitorPlay size={17}/> Open Main Screen</a>
           <Button variant="secondary" onClick={()=>void copy('screen')}><Copy size={16}/>{copied==='screen' ? 'Screen link copied' : 'Copy screen link'}</Button>
           <Button variant="secondary" onClick={()=>void copy('portal')}><Copy size={16}/>{copied==='portal' ? 'Portal copied' : 'Copy XP Play Portal'}</Button>
+          <Button variant="secondary" onClick={()=>void copy('invite')}><Copy size={16}/>{copied==='invite' ? 'Invitation copied' : 'Copy player invitation'}</Button>
           <Button variant="ghost" onClick={()=>void startFreshLive()} disabled={liveBusy}>New session</Button>
         </>}
       </div>
@@ -750,7 +834,7 @@ function Host() {
       <div className="host-session-card">
         <div><small>1 · MAIN SCREEN</small><strong>Open the game-specific presentation link</strong><span>{screenUrl}</span></div>
         <div className="host-portal-step"><PlayerPortalQr value={portalUrl}/><span><small>2 · PLAYERS JOIN</small><strong>Scan the permanent XP Play portal</strong><em>{portalUrl}</em></span></div>
-        <div className="host-session-code"><small>GAME CODE</small><b>{game.code}</b></div>
+        <div className="host-session-code"><small>GAME CODE</small><b>{game.code}</b><button className={game.allowLateJoins?'late-join-on':'late-join-off'} disabled={!canControl||liveBusy} onClick={()=>void liveAction('late-joins',{enabled:!game.allowLateJoins})}>{game.allowLateJoins?'Late joining allowed':'Late joining locked'}</button></div>
         <ol className="host-session-progress" aria-label="Live session checklist">
           <li className="done"><b>1</b><span>Main Screen ready</span></li>
           <li className="done"><b>2</b><span>Join code available</span></li>
@@ -763,8 +847,8 @@ function Host() {
     <div className="host-grid">
       <div className="host-main">
         <div className="host-question"><div className="host-q-top"><Badge>{q?.round || 'ROUND 1'}</Badge><span>QUESTION {game.questionIndex+1} / {game.questions.length}</span></div><h2>{q?.prompt}</h2>{q?.imageUrl&&<img className="host-question-image" src={q.imageUrl} alt={q.imageAlt || 'Question image'}/>}<div className="host-q-meta"><span><Clock3 size={16}/>{q?.duration || 30}s timer</span><span><Trophy size={16}/>{q?.points} max</span><span>{q ? typeNames[q.type] : ''}</span>{q&&<span>{scoringSummary(q)}</span>}</div>{q && <HostAnswerKey question={q}/>}{q?.options && <div className="host-options">{q.options.map((option,index)=><div key={option}><span>{'ABCD'[index]}</span>{option}</div>)}</div>}</div>
-        <div className="control-card live-control-card"><div><small className="next-action-label">NEXT ACTION · {phaseNames[game.phase]}</small><h3>{next}</h3><p>{liveConnected ? 'Updates the Main Screen and every connected player automatically.' : 'Start the live session before advancing the quiz.'}</p></div><div className="control-buttons"><Button onClick={()=>void liveAction(game.phase==='break'?'resume':game.phase==='thanks'?'end':'advance')} disabled={!liveConnected||!canControl||game.phase==='closed-game'||liveBusy}>{next}<ArrowRight size={18}/></Button>{['scores','round-scores','leaderboard','round-intro'].includes(game.phase)&&<Button variant="secondary" onClick={()=>void liveAction('break')} disabled={!liveConnected||!canControl||liveBusy}>Take a break</Button>}{['question','open','closed','reveal'].includes(game.phase)&&<Button variant="danger" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>{if(confirm('Void this question? Its points will be removed.'))void liveAction('void')}}>Void question</Button>}{game.phase!=='thanks'&&game.phase!=='closed-game'&&<Button variant="danger" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>{if(confirm('End this live session? Players will see the themed finale. The session will be deleted after 24 hours.'))void liveAction('end')}}>End session</Button>}</div></div>
-        <div className="response-card"><div className="card-title"><div><h3>Incoming answers</h3><small className="card-subtitle">Responses needing a decision are shown first.</small></div><Badge tone={game.phase==='open'?'green':'gray'}>{answered.length} / {(game.questionEligiblePlayerIds||game.players.map(player=>player.id)).length} submitted</Badge></div>{answered.length>0&&<div className="response-summary"><span className={pendingReviewCount ? 'attention' : ''}>{pendingReviewCount} need review</span><span>{markedCount} marked</span><span>{automaticCount} automatic</span></div>}{answered.length===0?<div className="empty-state">Player answers will appear here while the question is open.</div>:<div className="answer-list">{responseRows.map(({response,player,grade,needsVerification})=>{const canMark=needsVerification&&['open','closed','reveal'].includes(game.phase);return <div key={player.id} className={`answer-row ${needsVerification?'needs-verification':''}`}><div className="answer-player"><PlayerAvatar player={player} packs={packs}/><span><strong>{player.name}</strong><small>{new Date(response.submittedAt).toLocaleTimeString()}</small></span></div><span className="response-value">{typeof response.value==='object'?answerLabel(response.value):String(response.value)}</span>{needsVerification&&!grade&&<Badge tone="amber">Needs Host verification</Badge>}{q.type==='text'&&!needsVerification&&<Badge tone="green">Accepted answer match</Badge>}{canMark&&<div className="mark-buttons" aria-label={`Mark ${player.name}'s answer`}><button className={grade?.points===0?'selected':''} title="No credit" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>void liveAction('grade',{playerId:player.id,points:0})}>0%</button><button className={grade?.points===q.points*.5?'selected':''} title="Half credit" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>void liveAction('grade',{playerId:player.id,points:q.points*.5})}>50%</button><button className={grade?.points===q.points?'selected':''} title="Full credit" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>void liveAction('grade',{playerId:player.id,points:q.points})}>100%</button></div>}{!needsVerification&&game.phase==='reveal'&&<button className="score-override" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>{const raw=prompt(`Award points from 0 to ${q.points}`,String(grade?.points||0));if(raw!==null&&Number.isFinite(Number(raw)))void liveAction('grade',{playerId:player.id,points:Number(raw)})}}>Adjust</button>}{grade&&<Badge tone={grade.points?'green':'gray'}>{grade.points} pts · {grade.detail}</Badge>}</div>})}{['free','text'].includes(q.type)&&game.phase==='reveal'&&<button className="mark-remaining" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>void liveAction('grade-all-zero')}>Mark all unverified responses 0</button>}</div>}</div>
+        <div className="control-card live-control-card"><div><small className="next-action-label">NEXT ACTION · {phaseNames[game.phase]}</small><h3>{next}</h3><p>{liveConnected ? 'Updates the Main Screen and every connected player automatically.' : 'Start the live session before advancing the quiz.'}</p></div><div className="control-buttons"><Button onClick={()=>void liveAction(game.phase==='break'?'resume':game.phase==='thanks'?'end':'advance')} disabled={!liveConnected||!canControl||game.phase==='closed-game'||liveBusy}>{next}<ArrowRight size={18}/></Button>{game.phase==='open'&&<Button variant="secondary" onClick={()=>void liveAction('extend')} disabled={!liveConnected||!canControl||liveBusy}><Clock3 size={16}/> Add 10 seconds</Button>}{['scores','round-scores','leaderboard','round-intro'].includes(game.phase)&&<Button variant="secondary" onClick={()=>void liveAction('break')} disabled={!liveConnected||!canControl||liveBusy}>Take a break</Button>}{['question','open','closed','reveal'].includes(game.phase)&&<Button variant="danger" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>{if(confirm('Void this question? Its points will be removed.'))void liveAction('void')}}>Void question</Button>}{!['thanks','closed-game'].includes(game.phase)&&<Button variant="danger" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>{if(confirm('End this live session? Players will see the themed finale. The session will be deleted after 24 hours.'))void liveAction('end')}}>End session</Button>}</div></div>
+        <div className="response-card"><div className="card-title"><div><h3>Incoming answers</h3><small className="card-subtitle">Responses needing a decision are shown first.</small></div><Badge tone={game.phase==='open'?'green':'gray'}>{answered.length} / {eligibleIds.length} submitted</Badge></div>{answered.length>0&&<div className="response-summary"><span className={pendingReviewCount ? 'attention' : ''}>{pendingReviewCount} need review</span><span>{markedCount} marked</span><span>{automaticCount} automatic</span><span>{unansweredPlayers.length} unanswered</span></div>}<div className="response-filters" aria-label="Answer filters">{(['all','review','marked','automatic','unanswered'] as const).map(filter=><button key={filter} className={responseFilter===filter?'selected':''} onClick={()=>setResponseFilter(filter)}>{filter}</button>)}</div>{responseFilter==='unanswered'?<div className="unanswered-list">{unansweredPlayers.length?unansweredPlayers.map(player=><div key={player.id}><PlayerAvatar player={player} packs={packs} size={34}/><strong>{player.name}</strong><Badge tone="gray">Waiting</Badge></div>):<div className="empty-state">Everyone eligible has answered.</div>}</div>:answered.length===0?<div className="empty-state">Player answers will appear here while the question is open.</div>:visibleResponseRows.length===0?<div className="empty-state">No answers match this filter.</div>:<div className="answer-list">{visibleResponseRows.map(({response,player,grade,needsVerification})=>{const canMark=needsVerification&&['open','closed','reveal'].includes(game.phase);return <div key={player.id} className={`answer-row ${needsVerification?'needs-verification':''}`}><div className="answer-player"><PlayerAvatar player={player} packs={packs}/><span><strong>{player.name}</strong><small>{new Date(response.submittedAt).toLocaleTimeString()}</small></span></div><span className="response-value">{typeof response.value==='object'?answerLabel(response.value):String(response.value)}</span>{needsVerification&&!grade&&<Badge tone="amber">Needs Host verification</Badge>}{q.type==='text'&&!needsVerification&&<Badge tone="green">Accepted answer match</Badge>}{canMark&&<div className="mark-buttons" aria-label={`Mark ${player.name}'s answer`}><button className={grade?.points===0?'selected':''} title="No credit" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>void liveAction('grade',{playerId:player.id,points:0})}>0%</button><button className={grade?.points===q.points*.5?'selected':''} title="Half credit" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>void liveAction('grade',{playerId:player.id,points:q.points*.5})}>50%</button><button className={grade?.points===q.points?'selected':''} title="Full credit" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>void liveAction('grade',{playerId:player.id,points:q.points})}>100%</button></div>}{!needsVerification&&game.phase==='reveal'&&<button className="score-override" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>{const raw=prompt(`Award points from 0 to ${q.points}`,String(grade?.points||0));if(raw!==null&&Number.isFinite(Number(raw)))void liveAction('grade',{playerId:player.id,points:Number(raw)})}}>Adjust</button>}{grade&&<Badge tone={grade.points?'green':'gray'}>{grade.points} pts · {grade.detail}</Badge>}</div>})}{['free','text'].includes(q.type)&&game.phase==='reveal'&&<button className="mark-remaining" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>void liveAction('grade-all-zero')}>Mark all unverified responses 0</button>}</div>}</div>
       </div>
       <div className="host-side">
         <div className="side-card"><div className="card-title"><h3>Overall leaderboard</h3><Trophy size={19}/></div>{game.players.length===0?<p className="muted">Waiting for the first player to join.</p>:ranked(game.players).map((player,index)=><div className="rank-row" key={player.id}><span className="rank-num">{index+1}</span><PlayerAvatar player={player} packs={packs} size={34}/><strong>{player.name}</strong><b>{player.score}</b></div>)}</div>
@@ -774,6 +858,19 @@ function Host() {
     </div>
   </main></Shell>
 }
+function WinnersPodium({ players, packs }: { players: Player[]; packs: Pack[] }) {
+  const winners = ranked(players).slice(0, 3)
+  return <div className={`screen-podium count-${winners.length}`}>
+    <div className="podium-heading"><span>✦ HALL OF FAME ✦</span><h1>Our Champions:</h1><p>A finish worth remembering.</p></div>
+    <div className="podium-stage">
+      {winners.map((player, index) => { const place = index + 1; return <div key={player.id} className={`podium-player place-${place}`}>
+        <div className="podium-avatar"><PlayerAvatar player={player} packs={packs} size={place===1?176:128}/><span>{place===1?'1ST':place===2?'2ND':'3RD'}</span></div>
+        <strong>{player.name}</strong><b>{player.score.toLocaleString()} points</b><div className="podium-block">{place}</div>
+      </div> })}
+      {!winners.length&&<div className="podium-empty">No player scores were recorded.</div>}
+    </div>
+  </div>
+}
 function MainScreen() {
   const { code } = useParams()
   const nav = useNavigate()
@@ -781,6 +878,7 @@ function MainScreen() {
   const [enteredCode, setEnteredCode] = useState('')
   const [connectionError, setConnectionError] = useState('')
   const [connectedCode, setConnectedCode] = useState('')
+  const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement))
   useEffect(() => {
     if (!code) return
     setConnectionError('')
@@ -793,6 +891,15 @@ function MainScreen() {
   useThemeScenePreload(liveTheme, 'screen')
   const showQ=['question','open','closed','reveal'].includes(game.phase)
   const ranking=ranked(game.players)
+  useEffect(() => {
+    const updateFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', updateFullscreen)
+    return () => document.removeEventListener('fullscreenchange', updateFullscreen)
+  }, [])
+  const toggleFullscreen = async () => {
+    if (document.fullscreenElement) await document.exitFullscreen()
+    else await document.documentElement.requestFullscreen()
+  }
   useEffect(() => {
     const slide = slideRef.current
     const frame = slide?.parentElement
@@ -827,31 +934,41 @@ function MainScreen() {
   }
   if (!code) return <div className="screen screen-launcher pixelplay-screen-launcher" style={{backgroundImage:`linear-gradient(90deg,#03070ee8,#07101ad6),url("${asset('themes/quiz-show/background.webp')}")`}}><div className="screen-launcher-card"><XPPlayLogo/><div className="eyebrow">MAIN SCREEN · PRESENTATION DISPLAY</div><h1>Connect the big screen</h1><p>Enter the code created by the XP Studio Host console. XP Play will then follow that live game automatically.</p><label>LIVE GAME CODE<input autoFocus maxLength={6} value={enteredCode} onChange={event=>setEnteredCode(event.target.value.toUpperCase())} onKeyDown={event=>event.key==='Enter'&&openCode()} placeholder="ABC123"/></label><Button onClick={openCode} disabled={!enteredCode.trim()}>Launch XP Play <ArrowRight size={18}/></Button><small>The game-specific Main Screen link fills this in automatically.</small><div className="screen-launcher-powered"><XPPlayCredit/></div></div></div>
   if (code && connectedCode !== code) return <div className="screen"><div className="screen-centre"><h1>{connectionError || 'Connecting to the live game…'}</h1></div></div>
-  return <div className={`screen theme-surface theme-${liveTheme} phase-${game.phase}`} style={themeSurfaceStyle(liveTheme)}>{connectionError&&<div className="error" role="alert">{connectionError}</div>}<div className="screen-top"><div className="screen-brand-block"><XPPlayLogo compact/><div className="screen-event"><strong>{game.title}</strong><small>{q?.round || "GET READY TO PLAY"}</small></div></div><div className="screen-code"><small>XP PLAY PORTAL</small><strong className="screen-portal">{location.host}{location.pathname}#/join</strong><span className="screen-code-value"><small>CODE</small><b>{game.code}</b></span><span className="screen-live">● LIVE</span></div></div><div className="screen-content">{game.phase==='lobby'?<div ref={slideRef} className="screen-lobby"><span className="big-star">✦</span><div className="eyebrow">GET READY TO PLAY</div><h1>{game.title}</h1><p>Scan to open XP Play, then enter</p><div className="lobby-join"><PlayerPortalQr value={`${location.origin}${location.pathname}#/join`}/><div><small>XP PLAY PLAYER PORTAL</small><strong>{location.host}{location.pathname}#/join</strong><div className="giant-code">{game.code}</div></div></div><div className="joined-avatars">{game.players.slice(0,8).map(p=><PlayerAvatar key={p.id} player={p} packs={packs} size={64}/>)}</div><small>{game.players.length} {game.players.length===1?'player':'players'} joined</small></div>:game.phase==='round-intro'?<div ref={slideRef} className="screen-centre round-intro-screen"><span className="round-kicker">UP NEXT</span><h1>{q.round.replace(' · ','\n')}</h1><p>Get ready. The next question is coming.</p></div>:showQ?<div ref={slideRef} className={`screen-question type-${q.type} ${q.imageUrl?"has-media":""}`}><div className="screen-q-head"><span>{q.round}</span><span>QUESTION {game.questionIndex+1} / {game.questions.length}</span></div><div className="screen-type"><span><small>QUESTION TYPE</small><strong>{typeNames[q.type]}</strong></span><p><b>HOW TO ANSWER</b>{questionInstruction(q)}</p><em className="screen-scoring">{scoringSummary(q).toUpperCase()}</em></div><div className="screen-question-focus"><h1>{q.prompt}</h1><QuestionMediaStage game={game} question={q}/>{q.type==='anagram'&&game.phase!=='reveal'&&<AnagramBoard game={game} question={q}/>}</div><div className="screen-answer-area"><AnswerStage question={q} revealed={game.phase==='reveal'}/>{game.phase!=='reveal'&&['ordering','matching','categorise'].includes(q.type)&&q.items&&<div className="screen-items">{q.items.map(item=><span key={item}>{item}</span>)}</div>}</div><div className="screen-question-status"><Countdown game={game} className="screen-timer"/>{game.phase==='reveal'?<div className="screen-reveal-caption"><Sparkles size={18}/> {q.explanation || 'The correct answer is highlighted above.'}</div>:<div className="screen-footline"><span>{game.phase==='open'?'Answers open':game.phase==='closed'?'Answers closed':'Get ready to answer'}</span><span>{game.answerCount || 0} answers received</span></div>}</div></div>:['scores','round-scores','leaderboard','final'].includes(game.phase)?<div ref={slideRef} className="screen-scores"><span className="round-kicker">{game.phase==="round-scores"?q.round:game.phase==="scores"?"AFTER THIS QUESTION":game.phase==="final"?"THE FINAL RESULTS":"ALL ROUNDS"}</span><h1>{game.phase==="round-scores"?"Round scores":game.phase==="final"?"Our champions":game.phase==="scores"?"Question complete":"Leaderboard"}</h1><div className="screen-ranks">{(game.phase==="round-scores"?rankedRound(game,q.round):ranking).slice(0,10).map(p=><div key={p.id}><span>#{p.rank}</span><PlayerAvatar player={p} packs={packs} size={52}/><strong>{p.name}</strong><b>{(game.phase==="round-scores"?roundPoints(game,p.id,q.round):p.score).toLocaleString()}</b></div>)}</div></div>:<div ref={slideRef} className={`screen-centre phase-scene-copy ${game.phase==='break'?'break-copy':'thanks-copy'}`}><span className="scene-symbol" aria-hidden="true">{sceneCopy.symbol}</span><span className="scene-kicker">{sceneCopy.kicker}</span><h1>{sceneCopy.title}</h1><p>{sceneCopy.screen}</p></div>}</div><div className="screen-bottom"><XPPlayCredit/><span>{phaseNames[game.phase].toUpperCase()}</span></div></div>
+  return <div className={`screen theme-surface theme-${liveTheme} phase-${game.phase}`} style={themeSurfaceStyle(liveTheme)}>{connectionError&&<div className="error" role="alert">{connectionError}</div>}<div className="screen-top"><div className="screen-brand-block"><XPPlayLogo compact/><div className="screen-event"><strong>{game.title}</strong><small>{q?.round || "GET READY TO PLAY"}</small></div></div><div className="screen-code"><small>XP PLAY PORTAL</small><strong className="screen-portal">{location.host}{location.pathname}#/join</strong><span className="screen-code-value"><small>CODE</small><b>{game.code}</b></span><span className="screen-live">● LIVE</span><button className="screen-fullscreen" onClick={()=>void toggleFullscreen()} aria-label={isFullscreen?'Exit fullscreen':'Enter fullscreen'}><Maximize2 size={17}/>{isFullscreen?'Exit':'Fullscreen'}</button></div></div><div className="screen-content">{game.phase==='lobby'?<div ref={slideRef} className="screen-lobby"><span className="big-star">✦</span><div className="eyebrow">GET READY TO PLAY</div><h1>{game.title}</h1><p>Scan to open XP Play, then enter</p><div className="lobby-join"><PlayerPortalQr value={`${location.origin}${location.pathname}#/join`}/><div><small>XP PLAY PLAYER PORTAL</small><strong>{location.host}{location.pathname}#/join</strong><div className="giant-code">{game.code}</div></div></div><div className="joined-avatars">{game.players.slice(0,8).map(p=><PlayerAvatar key={p.id} player={p} packs={packs} size={64}/>)}</div><small>{game.players.length} {game.players.length===1?'player':'players'} joined</small></div>:game.phase==='round-intro'?<div ref={slideRef} className="screen-centre round-intro-screen"><span className="round-kicker">UP NEXT</span><h1>{q.round.replace(' · ','\n')}</h1><p>Get ready. The next question is coming.</p></div>:showQ?<div ref={slideRef} className={`screen-question type-${q.type} ${q.imageUrl?"has-media":""}`}><div className="screen-q-head"><span>{q.round}</span><span>QUESTION {game.questionIndex+1} / {game.questions.length}</span></div><div className="screen-type"><span><small>QUESTION TYPE</small><strong>{typeNames[q.type]}</strong></span><p><b>HOW TO ANSWER</b>{questionInstruction(q)}</p><em className="screen-scoring">{scoringSummary(q).toUpperCase()}</em></div><div className="screen-question-focus"><h1>{q.prompt}</h1><QuestionMediaStage game={game} question={q}/>{q.type==='anagram'&&game.phase!=='reveal'&&<AnagramBoard game={game} question={q}/>}</div><div className="screen-answer-area"><AnswerStage question={q} revealed={game.phase==='reveal'}/>{game.phase!=='reveal'&&['ordering','matching','categorise'].includes(q.type)&&q.items&&<div className="screen-items">{q.items.map(item=><span key={item}>{item}</span>)}</div>}</div><div className="screen-question-status"><Countdown game={game} className="screen-timer"/>{game.phase==='reveal'?<div className="screen-reveal-caption"><Sparkles size={18}/> {q.explanation || 'The correct answer is highlighted above.'}</div>:<div className="screen-footline"><span>{game.phase==='open'?'Answers open':game.phase==='closed'?'Answers closed':'Get ready to answer'}</span><span>{game.answerCount || 0} answers received</span></div>}</div></div>:['scores','round-scores','leaderboard','final'].includes(game.phase)?<div ref={slideRef} className="screen-scores"><span className="round-kicker">{game.phase==="round-scores"?q.round:game.phase==="scores"?"AFTER THIS QUESTION":game.phase==="final"?"THE FINAL RESULTS":"ALL ROUNDS"}</span><h1>{game.phase==="round-scores"?"Round scores":game.phase==="final"?"Our Champions":game.phase==="scores"?"Question complete":"Leaderboard"}</h1><div className="screen-ranks">{(game.phase==="round-scores"?rankedRound(game,q.round):ranking).slice(0,10).map(p=><div key={p.id}><span>#{p.rank}</span><PlayerAvatar player={p} packs={packs} size={52}/><strong>{p.name}</strong><b>{(game.phase==="round-scores"?roundPoints(game,p.id,q.round):p.score).toLocaleString()}</b></div>)}</div></div>:game.phase==='podium'?<div ref={slideRef} className="screen-podium-wrap"><WinnersPodium players={game.players} packs={packs}/></div>:<div ref={slideRef} className={`screen-centre phase-scene-copy ${game.phase==='break'?'break-copy':'thanks-copy'}`}><span className="scene-symbol" aria-hidden="true">{sceneCopy.symbol}</span><span className="scene-kicker">{sceneCopy.kicker}</span><h1>{sceneCopy.title}</h1><p>{sceneCopy.screen}</p></div>}</div><div className="screen-bottom"><XPPlayCredit/><span>{phaseNames[game.phase].toUpperCase()}</span></div></div>
 }
 function Join() {
   const { code: routeCode } = useParams()
-  const game=useGame(), packs=usePacks(), [name,setName]=useState(''), [selected,setSelected]=useState('default-blue'), [packId,setPackId]=useState('default'), [error,setError]=useState(''), [code,setCode]=useState(routeCode || ''), [answer,setAnswer]=useState<unknown>('')
+  const game=useGame(), packs=usePacks(), [name,setName]=useState(()=>localStorage.getItem('xp-play-name')||''), [selected,setSelected]=useState(()=>localStorage.getItem('xp-play-avatar')||'default-blue'), [packId,setPackId]=useState(()=>localStorage.getItem('xp-play-avatar-pack')||'default'), [error,setError]=useState(''), [code,setCode]=useState(routeCode || ''), [answer,setAnswer]=useState<unknown>('')
   const liveTheme = currentTheme(game)
   useThemeScenePreload(liveTheme, 'player')
   const [submitting, setSubmitting] = useState(false), [readyQuestionId, setReadyQuestionId] = useState(''), [joining, setJoining] = useState(false)
   const [ownResult, setOwnResult] = useState<OwnResult | null>(null)
   const [connectionNotice, setConnectionNotice] = useState('')
+  const [connectionState, setConnectionState] = useState<'live'|'reconnecting'|'offline'>(navigator.onLine?'reconnecting':'offline')
   const anagramRetryAt = useRef(0)
   const [playerId,setPlayerId]=useState(routeCode ? sessionStorage.getItem('quiz-demo-player-id')||'' : '')
   const player=game.players.find(p=>p.id===playerId), q=currentQuestion(game), pack=packs.find(p=>p.id===packId)
+  useWakeLock(Boolean(player) && game.phase !== 'closed-game')
   const selectedAvatar = packs.flatMap(item => item.avatars).find(avatar => avatar.id === selected)
   const avatarCount = packs.reduce((total, item) => total + item.avatars.length, 0)
   const sceneCopy = quizThemes[liveTheme][game.phase === 'break' ? 'break' : 'finale']
   const existing=player&&q?responseFor(game,player.id,q.id):undefined
-  const displayedResult = player && (game.phase === 'reveal' || ['scores','round-scores','leaderboard','final'].includes(game.phase)) ? ownResult : null
-  const setPlayerIssue = (message: string) => setError(message ? friendlyPlayerError(message) : '')
+  const displayedResult = player && (game.phase === 'reveal' || ['scores','round-scores','leaderboard','final','podium'].includes(game.phase)) ? ownResult : null
+  const setPlayerIssue = (message: string) => { if (message) setConnectionState(navigator.onLine?'reconnecting':'offline'); setError(message ? friendlyPlayerError(message) : '') }
+  const setPlayerConnection = (connected: boolean) => setConnectionState(connected?'live':navigator.onLine?'reconnecting':'offline')
   useEffect(()=>{setAnswer(q?.type==='multi'||q?.type==='ordering'||q?.type==='list'?[]:q?.type==='matching'||q?.type==='categorise'?{}:'')},[q?.id,q?.type])
+  useEffect(() => {
+    const online = () => setConnectionState(player?'reconnecting':'live')
+    const offline = () => setConnectionState('offline')
+    window.addEventListener('online', online)
+    window.addEventListener('offline', offline)
+    return () => { window.removeEventListener('online', online); window.removeEventListener('offline', offline) }
+  }, [player])
   useEffect(() => {
     const reconnectCode = routeCode
     if (!reconnectCode) return
     let noticeTimer = 0
-    reconnectLivePlayer(reconnectCode, setReadyQuestionId, setOwnResult, setPlayerIssue).then(id => {
+    reconnectLivePlayer(reconnectCode, setReadyQuestionId, setOwnResult, setPlayerIssue, setPlayerConnection).then(id => {
       if (!id) return
       setPlayerId(id)
       setConnectionNotice('Reconnected to the live game')
@@ -865,9 +982,12 @@ function Join() {
     if (joining) return
     setJoining(true)
     try {
-      const liveId = await joinLiveGame(code,name,selected,setReadyQuestionId,setOwnResult,setPlayerIssue)
+      const liveId = await joinLiveGame(code,name,selected,setReadyQuestionId,setOwnResult,setPlayerIssue,setPlayerConnection)
       if (!liveId) throw new Error('That game code is not active.')
       setPlayerId(liveId)
+      localStorage.setItem('xp-play-name', name.trim())
+      localStorage.setItem('xp-play-avatar', selected)
+      localStorage.setItem('xp-play-avatar-pack', packId)
       window.history.replaceState(null, '', `${location.pathname}#/join/${code.trim().toUpperCase()}`)
       setError('')
     } catch(e) { setError(friendlyPlayerError(e)) }
@@ -908,12 +1028,12 @@ function Join() {
       <div className="join-action"><div className="join-selection">{selectedAvatar&&<img src={asset(selectedAvatar.src)} alt=""/>}<span><small>PLAYING AS</small><strong>{name.trim() || 'Choose your name'}</strong></span></div><Button onClick={()=>void join()} disabled={!canJoin}>{joining?'Joining…':'Join game'} <ArrowRight size={18}/></Button></div>
     </div> : <div className="player-session">
       {connectionNotice&&<div className="connection-notice" role="status"><Check size={16}/>{connectionNotice}</div>}
-      <div className="player-identity"><PlayerAvatar player={player} packs={packs} size={52}/><div><strong>{player.name}</strong><span>{player.score.toLocaleString()} points</span></div><Badge tone="green">● LIVE</Badge></div>
+      <div className="player-identity"><PlayerAvatar player={player} packs={packs} size={52}/><div><strong>{player.name}</strong><span>{player.score.toLocaleString()} points</span></div><span className={`player-connection ${connectionState}`} role="status">{connectionState==='offline'?<WifiOff size={15}/>:<Wifi size={15}/>} {connectionState==='live'?'Live':connectionState==='offline'?'Offline':'Reconnecting'}</span></div>
       {game.phase==='lobby'?<div className="player-wait"><span>✦</span><h1>You're in!</h1><p>Waiting for the host to begin. Keep this tab open.</p><div className="wait-code">GAME CODE <b>{game.code}</b></div></div>:game.phase==='round-intro'?<div className="player-wait"><span>✦</span><div className="eyebrow dark">COMING UP</div><h1>{q.round}</h1><p>Get ready for your next question.</p></div>:['question','open','closed','reveal'].includes(game.phase)?<div className="player-question">
         <div className="player-question-top"><span>QUESTION {game.questionIndex+1} OF {game.questions.length}</span><span>{scoringSummary(q).toUpperCase()}</span></div><Countdown game={game} className="player-timer"/>
         {game.phase==='question'?<div className="player-ready-card"><div className="player-ready-meta"><span><small>QUESTION TYPE</small><strong>{typeNames[q.type]}</strong></span><span><small>SCORING</small><strong>{scoringSummary(q)}</strong></span></div><h1>Look at the main screen</h1><p>{questionInstruction(q)}</p><div className="player-ready-status"><span/>Answers will open automatically</div></div>:<div className="player-question-card"><span className="player-type"><small>QUESTION TYPE</small>{typeNames[q.type]}</span><h1>{q.prompt}</h1><p className="player-instructions"><b>{game.phase==='reveal'?'ANSWER REVEAL':'HOW TO ANSWER'}</b>{game.phase==='reveal'?'Your answer and result appear below.':questionInstruction(q)}</p></div>}
         {readyQuestionId!==q.id?<div className="player-wait small"><span>⌛</span><h2>Reconnecting</h2><p>Checking your answer status…</p></div>:submitting?<div className="player-wait small"><span>⌛</span><h2>Submitting</h2><p>Waiting for the game to confirm your answer.</p></div>:game.phase==='question'?null:game.phase==='closed'?<div className="player-wait small"><span>⌛</span><h2>Answers are closed</h2><p>Waiting for the host to reveal the answer.</p></div>:game.phase==='reveal'?<PlayerReveal question={q} response={existing} result={displayedResult}/>:existing?<div className="player-wait small"><span>✓</span><h2>Answer locked in</h2><p>Waiting for everyone else.</p></div>:<><div className="answers-open" role="status"><span/><div>Answers are open<small>Submit before the timer runs out.</small></div></div><AnswerInput q={q} value={answer} setValue={setAnswer} choice={choice}/>{error&&<div className="player-error" role="alert"><span>{error}</span></div>}<Button onClick={()=>void submit()} disabled={buttonDisabled}>{submitting?'Submitting…':'Submit answer'} <ArrowRight size={18}/></Button></>}
-      </div>:['scores','round-scores','leaderboard','final'].includes(game.phase)?<div className="player-wait"><Trophy size={50}/><h1>{game.phase==='round-scores'?'Round scores':game.phase==='final'?'Final results':game.phase==='leaderboard'?'Overall leaderboard':'Question complete'}</h1><p>{game.phase==='round-scores'?`You scored ${roundPoints(game,player.id,q.round).toLocaleString()} points in ${q.round}.`:`You have ${player.score.toLocaleString()} points overall.`}</p>{displayedResult&&<p>This question: {displayedResult.points.toLocaleString()} points</p>}<div className="player-rank">Rank #{ranked(game.players).find(item=>item.id===player.id)?.rank || '—'}</div></div>:<div className="player-wait phase-player-card"><span>{sceneCopy.symbol}</span><small className="scene-kicker">{sceneCopy.kicker}</small><h1>{sceneCopy.playerTitle}</h1><p>{sceneCopy.player}{game.phase==='break'?'':` Your final score is ${player.score.toLocaleString()} points.`}</p></div>}
+      </div>:['scores','round-scores','leaderboard','final','podium'].includes(game.phase)?<div className={`player-wait ${game.phase==='podium'?'player-podium-result':''}`}><Trophy size={50}/><h1>{game.phase==='round-scores'?'Round scores':game.phase==='final'?'Final results':game.phase==='leaderboard'?'Overall leaderboard':game.phase==='podium'?(ranked(game.players).find(item=>item.id===player.id)?.rank||99)<=3?'You made the podium!':'Meet the winners':'Question complete'}</h1><p>{game.phase==='round-scores'?`You scored ${roundPoints(game,player.id,q.round).toLocaleString()} points in ${q.round}.`:`You have ${player.score.toLocaleString()} points overall.`}</p>{displayedResult&&<p>This question: {displayedResult.points.toLocaleString()} points</p>}<div className="player-rank">Rank #{ranked(game.players).find(item=>item.id===player.id)?.rank || '—'}</div>{game.phase==='podium'&&<p>Look at the main screen for the winners photo.</p>}</div>:<div className="player-wait phase-player-card"><span>{sceneCopy.symbol}</span><small className="scene-kicker">{sceneCopy.kicker}</small><h1>{sceneCopy.playerTitle}</h1><p>{sceneCopy.player}{game.phase==='break'?'':` Your final score is ${player.score.toLocaleString()} points.`}</p></div>}
     </div>}
     <div className="player-footer"><XPPlayCredit/><span>XP PLAY LIVE</span></div>
   </div>

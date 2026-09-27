@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { advanceGame, breakGame, resumeGame } from '../src/gameEngine.ts'
+import { advanceGame, breakGame, extendAnswerTime, resumeGame, setLateJoining } from '../src/gameEngine.ts'
 import { publicGame } from '../src/publicGame.ts'
 import { answerLabel, resultForAnswer } from '../src/reveal.ts'
 
@@ -85,6 +85,29 @@ test('public state withholds future questions, answer keys and private submissio
   const revealed = publicGame({ ...game, phase: 'reveal' })
   assert.equal(revealed.questions[0].answer, 'Mars')
   assert.equal(revealed.questions[1].answer, undefined)
+})
+
+test('final results advance through the winners podium before the goodbye screen', () => {
+  const final = { ...base(), phase: 'final' }
+  const podium = advanceGame(final)
+  assert.equal(podium.phase, 'podium')
+  assert.equal(podium.stateVersion, final.stateVersion + 1)
+  const thanks = advanceGame(podium)
+  assert.equal(thanks.phase, 'thanks')
+  assert.equal(thanks.stateVersion, podium.stateVersion + 1)
+})
+
+test('Host reliability controls are immutable and versioned', () => {
+  const open = { ...base(), phase: 'open', closesAt: 30_000, timerExtensionMs: 0 }
+  const extended = extendAnswerTime(open)
+  assert.equal(extended.closesAt, 40_000)
+  assert.equal(extended.timerExtensionMs, 10_000)
+  assert.equal(extended.stateVersion, open.stateVersion + 1)
+  assert.equal(open.closesAt, 30_000)
+  const locked = setLateJoining(open, false)
+  assert.equal(locked.allowLateJoins, false)
+  assert.equal(locked.stateVersion, open.stateVersion + 1)
+  assert.equal(setLateJoining(locked, false), locked)
 })
 
 test('public state releases only the active anagram target needed for timed solving', () => {

@@ -331,6 +331,6 @@ export function overrideScore(playerId: string, newTotal: number) {
 export function publicRanks() { return ranked(game.players) }
 export function actionLabel(phase: Phase): string {
   return ({ lobby: 'Start quiz', 'round-intro': 'Show first question', question: 'Open answers', open: 'Close answers',
-    closed: 'Reveal answer', reveal: 'Continue', scores: 'Next question', 'round-scores': 'Show total leaderboard', leaderboard: 'Continue', final: 'Thanks for playing',
-    thanks: 'Close session', break: 'Resume quiz', 'closed-game': 'Session closed' } as Record<Phase, string>)[phase]
+    closed: 'Reveal answer', reveal: 'Continue', scores: 'Next question', 'round-scores': 'Show total leaderboard', leaderboard: 'Continue', final: 'Show winners podium',
+    podium: 'Thanks for playing', thanks: 'Close session', break: 'Resume quiz', 'closed-game': 'Session closed' } as Record<Phase, string>)[phase]
 }
