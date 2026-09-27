@@ -28,6 +28,7 @@ test('every selectable theme has its definition, CSS tokens and complete scene a
     assert.ok((await stat(player)).size > 1_000, `${theme}/player.webp is empty or missing`)
   }
   assert.ok(css.includes('var(--theme-player)'), 'player screens do not use the portrait theme scene')
+  assert.match(css, /\.theme-celebration\{[^}]*--theme-font:'Bungee Shade'/)
 })
 
 test('avatar manifests use compact transparent WebP display assets', async () => {
