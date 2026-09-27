@@ -5,7 +5,7 @@ import { advanceGame, breakGame, extendAnswerTime, resumeGame, setLateJoining } 
 import { currentQuestion, isLastQuestionInRound, type Game, type Player, type Response } from './model'
 import { publicGame } from './publicGame'
 import { resultForGrade, type OwnResult } from './reveal'
-import { roundScore } from './scoring'
+import { normaliseQuestion, roundScore } from './scoring'
 import { getGame, receiveLiveGame, receiveOwnLiveResponse, type QuizTemplate } from './store'
 
 // Firebase web configuration is public; Firestore rules enforce access.
@@ -273,8 +273,9 @@ export async function syncQuizLibrary(localQuizzes: QuizTemplate[], allowPopup =
   const merged = new Map<string, QuizTemplate>()
   for (const quiz of [...legacy, ...remote, ...localQuizzes]) {
     if ((deletedAt.get(quiz.id) || 0) >= Number(quiz.updatedAt || 0)) continue
-    const current = merged.get(quiz.id)
-    if (!current || quiz.updatedAt >= current.updatedAt) merged.set(quiz.id, serialise(quiz))
+    const migrated = { ...quiz, questions: (quiz.questions || []).map(normaliseQuestion) }
+    const current = merged.get(migrated.id)
+    if (!current || migrated.updatedAt >= current.updatedAt) merged.set(migrated.id, serialise(migrated))
   }
   // The bundled test quiz is a permanent known-good test fixture. Its local
   // canonical copy wins over any older accidental cloud edit.
@@ -356,7 +357,7 @@ function withRoster(game: Game, roster: Player[]): Game {
 
 function timedGame(data: PublicDocument | PrivateDocument): Game {
   const openedAt = data.openedAtServer?.toMillis()
-  const game = { ...data.game, answerCount: 'answerCount' in data ? data.answerCount || 0 : data.game.answerCount || 0 }
+  const game = { ...data.game, questions: data.game.questions.map(normaliseQuestion), answerCount: 'answerCount' in data ? data.answerCount || 0 : data.game.answerCount || 0 }
   if (!openedAt || !game.openedAt) return game
   const duration = game.questions[game.questionIndex]?.duration || 30
   return { ...game, openedAt, closesAt: openedAt + duration * 1000 + Number(game.timerExtensionMs || 0) }
@@ -506,7 +507,7 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
       if (!responses.some(response => response.playerId === command.playerId && response.questionId === questionId)) throw new Error('That Player answer is no longer available to mark.')
       const points = Math.min(roundScore(question.points), roundScore(Number(command.points) || 0))
       next.grades = next.grades.filter(g => !(g.playerId === command.playerId && g.questionId === questionId))
-      next.grades.push({ playerId: command.playerId, questionId, points, committed: false, verdict: points >= question.points ? 'correct' : points > 0 ? 'partial' : 'incorrect', detail: points >= question.points ? 'Host awarded full credit' : points > 0 ? 'Host awarded partial credit' : 'Host awarded no credit', source: question.type === 'free' ? 'manual' : 'override' })
+      next.grades.push({ playerId: command.playerId, questionId, points, committed: false, verdict: points >= question.points ? 'correct' : points > 0 ? 'partial' : 'incorrect', detail: points >= question.points ? 'Host awarded full credit' : points > 0 ? 'Host awarded partial credit' : 'Host awarded no credit', source: question.type === 'text' ? 'manual' : 'override' })
       next.stateVersion += 1
     } else if (command.type === 'grade-all-zero') {
       next = structuredClone(base)

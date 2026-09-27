@@ -1,9 +1,9 @@
-export type QuestionType = 'single' | 'multi' | 'boolean' | 'text' | 'free' | 'number' | 'closest' | 'ordering' | 'matching' | 'categorise' | 'list' | 'anagram' | 'photo-reveal' | 'photo-zoom'
+export type QuestionType = 'single' | 'multi' | 'boolean' | 'text' | 'number' | 'closest' | 'ordering' | 'matching' | 'categorise' | 'list' | 'anagram' | 'photo-reveal' | 'photo-zoom'
 /** Retained only so older exported quiz packs can still be imported. */
 export type ScoreMode = 'fixed' | 'time'
 export type PlacementMode = 'none' | 'fastest-correct'
 export type NumberBand = { tolerance: number; fraction: number }
-export type QuizTheme = 'quiz-show' | 'western' | 'neon-sci-fi' | 'arcane-fantasy' | 'monster-mash' | 'celebration' | 'retro-sports' | 'pixel-cinema' | 'world-tour' | 'synthwave-festival' | 'deep-sea' | 'detective-noir'
+export type QuizTheme = 'quiz-show' | 'western' | 'neon-sci-fi' | 'arcane-fantasy' | 'monster-mash' | 'celebration' | 'retro-sports' | 'pixel-cinema' | 'world-tour' | 'synthwave-festival' | 'deep-sea' | 'detective-noir' | 'music-charts' | 'food-drink' | 'history-time' | 'science-lab' | 'nature-wildlife' | 'british-pub' | 'video-game-arcade' | 'books-literature' | 'tv-streaming' | 'around-britain'
 
 export type ThemeSceneCopy = {
   kicker: string
@@ -82,6 +82,56 @@ export const quizThemes: Record<QuizTheme, QuizThemeDefinition> = {
     break: { kicker: 'REVIEW THE CLUES', title: 'The trail has gone quiet', screen: 'The case is paused while the detectives compare notes. The investigation resumes shortly.', playerTitle: 'Case paused', player: 'Keep this evidence file open. The Host will reopen the case automatically.', symbol: 'Ⅱ' },
     finale: { kicker: 'CASE CLOSED', title: 'Mystery solved', screen: 'The evidence is in and the final scores reveal our sharpest detectives. Thanks for cracking the case.', playerTitle: 'Case closed!', player: 'Fine detective work. Your result is on the record.', symbol: '◆' },
   },
+  'music-charts': {
+    name: 'Music & Charts', description: 'Speakers, vinyl and chart-topping neon energy.',
+    break: { kicker: 'SET BREAK', title: 'Turn the volume down', screen: 'The studio is resetting for the next set. Grab a drink and stay close to the stage.', playerTitle: 'Set break', player: 'Keep this page open. The Host will cue the next track automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'CHART COMPLETE', title: 'A number-one performance!', screen: 'The final scores have topped the chart. Thanks for bringing the noise to XP Play.', playerTitle: 'What a performance!', player: 'You helped make this quiz a chart-topper.', symbol: '♪' },
+  },
+  'food-drink': {
+    name: 'Food & Drink', description: 'A colourful food market with five-star diner charm.',
+    break: { kicker: 'KITCHEN BREAK', title: 'Time for a quick bite', screen: 'The kitchen is resetting for the next course. Refill your glass and stay hungry.', playerTitle: 'Kitchen break', player: 'Keep this page open. The next course will be served automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'SERVICE COMPLETE', title: 'A five-star finish!', screen: 'The final scores are served. Thanks for bringing brilliant taste to XP Play.', playerTitle: 'Service complete!', player: 'You made this a quiz feast to remember.', symbol: '★' },
+  },
+  'history-time': {
+    name: 'History: Through Time', description: 'A museum journey from ancient worlds to the future.',
+    break: { kicker: 'TIME OUT', title: 'Pause the timeline', screen: 'The gallery is resting between eras. Take a breather before history moves again.', playerTitle: 'Timeline paused', player: 'Keep this page open. The Host will restart the journey automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'HISTORY MADE', title: 'One for the record books!', screen: 'The timeline is complete and the final scores are recorded for posterity.', playerTitle: 'History made!', player: 'Your quiz journey belongs in the record books.', symbol: '✦' },
+  },
+  'science-lab': {
+    name: 'Science Lab', description: 'Bright experiments, curious discoveries and lab energy.',
+    break: { kicker: 'LAB PAUSE', title: 'Reset the experiment', screen: 'The instruments are recalibrating. Take a short break while the next test loads.', playerTitle: 'Lab on standby', player: 'Keep this terminal open. The experiment resumes automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'RESULTS CONFIRMED', title: 'A brilliant discovery!', screen: 'The data is in and the final scores are verified. Thanks for experimenting with XP Play.', playerTitle: 'Experiment complete!', player: 'Your result has been added to the lab record.', symbol: '◈' },
+  },
+  'nature-wildlife': {
+    name: 'Nature & Wildlife', description: 'Wild habitats, bright landscapes and expedition spirit.',
+    break: { kicker: 'TRAIL BREAK', title: 'Rest at the clearing', screen: 'The expedition has stopped for supplies. Take in the view before the trail continues.', playerTitle: 'Expedition paused', player: 'Keep this field guide open. The Host will restart the trail automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'EXPEDITION COMPLETE', title: 'Wildly well played!', screen: 'The field notes are complete and the final scores are safely logged.', playerTitle: 'Trail complete!', player: 'Thanks for exploring every corner of the quiz.', symbol: '✦' },
+  },
+  'british-pub': {
+    name: 'Great British Pub Quiz', description: 'Dark timber, brass and classic quiz-night warmth.',
+    break: { kicker: 'HALF TIME', title: 'Top up your glass', screen: 'The pencils are down for a short break. Grab some crisps before the next round.', playerTitle: 'Half time', player: 'Keep your answer sheet open. The Quizmaster will call time in automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'LAST ORDERS', title: 'Quiz night champions!', screen: 'The trophy is polished and the final scores are in. Thanks for joining the table.', playerTitle: 'Last orders!', player: 'A fine showing at the XP Play pub quiz.', symbol: '★' },
+  },
+  'video-game-arcade': {
+    name: 'Video Game Arcade', description: 'Cabinets, joysticks and neon high-score action.',
+    break: { kicker: 'PAUSED', title: 'Insert refreshments', screen: 'The arcade is in attract mode. Recharge before the next level begins.', playerTitle: 'Game paused', player: 'Keep this controller connected. The Host will press continue automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'HIGH SCORE', title: 'Game complete!', screen: 'The final scores are locked on the leaderboard. Thanks for playing XP Play.', playerTitle: 'Game complete!', player: 'Your score has been saved to the hall of fame.', symbol: '★' },
+  },
+  'books-literature': {
+    name: 'Books & Literature', description: 'A candlelit library filled with stories and ideas.',
+    break: { kicker: 'BOOKMARKED', title: 'Pause between chapters', screen: 'The story is resting at a good stopping point. Settle in before the next chapter.', playerTitle: 'Page bookmarked', player: 'Keep this book open. The next chapter starts automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'THE END', title: 'A story worth remembering!', screen: 'The last page is turned and the final scores complete our story.', playerTitle: 'The end!', player: 'Thanks for being part of this XP Play story.', symbol: '✦' },
+  },
+  'tv-streaming': {
+    name: 'TV & Streaming', description: 'Cameras, control rooms and prime-time screen energy.',
+    break: { kicker: 'AD BREAK', title: 'Stay tuned', screen: 'The studio is taking a short break. Do not adjust your set.', playerTitle: 'Stay tuned', player: 'Keep this controller open. The programme returns automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'SEASON FINALE', title: 'What a show!', screen: 'The cameras can stop rolling: the final scores are live.', playerTitle: 'Season complete!', player: 'Thanks for being part of the show.', symbol: '★' },
+  },
+  'around-britain': {
+    name: 'Around Britain', description: 'A bright journey through cities, coast and countryside.',
+    break: { kicker: 'SERVICE STOP', title: 'Take a quick breather', screen: 'The tour has stopped for tea. We will be back on the road shortly.', playerTitle: 'Quick stop', player: 'Keep your travel pass open. The journey resumes automatically.', symbol: 'Ⅱ' },
+    finale: { kicker: 'JOURNEY COMPLETE', title: 'Brilliantly British!', screen: 'The tour is complete and the final scores have reached their destination.', playerTitle: 'Journey complete!', player: 'Thanks for travelling around the quiz with us.', symbol: '✦' },
+  },
 }
 
 export type Question = {
@@ -148,8 +198,8 @@ export type Game = {
 }
 
 export const typeNames: Record<QuestionType, string> = {
-  single: 'Single choice', multi: 'Multi-select', boolean: 'True or false', text: 'Text answer',
-  free: 'Free response', number: 'Number', closest: 'Closest wins', ordering: 'Ordering',
+  single: 'Single choice', multi: 'Multi-select', boolean: 'True or false', text: 'Written answer',
+  number: 'Number', closest: 'Closest wins', ordering: 'Ordering',
   matching: 'Matching', categorise: 'Categorise', list: 'Multi-part list', anagram: 'Anagram',
   'photo-reveal': 'Photo reveal', 'photo-zoom': 'Zoomed photo',
 }
@@ -158,8 +208,7 @@ export const typeInstructions: Record<QuestionType, string> = {
   single: 'Tap one answer on your phone, then submit.',
   multi: 'Tap every correct answer on your phone, then submit.',
   boolean: 'Tap True or False on your phone, then submit.',
-  text: 'Type your answer on your phone, then submit.',
-  free: 'Write a response on your phone for the Host to mark.',
+  text: 'Write your answer on your phone. Accepted matches score automatically; the Host checks other responses.',
   number: 'Enter the exact number on your phone, then submit.',
   closest: 'Enter your best number guess on your phone. Closest wins.',
   ordering: 'Tap the items on your phone in the correct order.',
@@ -239,14 +288,14 @@ export const sampleQuestions: Question[] = [
   { id: 'q2', round: 'ROUND 1 · WARM UP', type: 'multi', prompt: 'Which of these are mammals?', options: ['Dolphin', 'Shark', 'Bat', 'Penguin'], answer: ['Dolphin', 'Bat'], points: 1000, duration: 30 },
   { id: 'q3', round: 'ROUND 1 · WARM UP', type: 'boolean', prompt: 'A platypus lays eggs.', answer: true, points: 1000, duration: 20 },
   { id: 'q4', round: 'ROUND 1 · WARM UP', type: 'text', prompt: 'What is the capital city of Scotland?', answer: ['Edinburgh'], points: 1000, duration: 30 },
-  { id: 'q5', round: 'ROUND 1 · WARM UP', type: 'free', prompt: 'Invent a name for a new theme park ride.', points: 1000, duration: 45 },
+  { id: 'q5', round: 'ROUND 1 · WARM UP', type: 'text', prompt: 'Invent a name for a new theme park ride.', answer: [], points: 1000, duration: 45 },
   { id: 'q6', round: 'ROUND 2 · THINK FAST', type: 'number', prompt: 'How many sides does a dodecagon have?', answer: 12, tolerance: 0, points: 1000, duration: 25 },
   { id: 'q7', round: 'ROUND 2 · THINK FAST', type: 'closest', prompt: 'In what year did the first modern Olympic Games take place?', answer: 1896, points: 1000, duration: 30 },
   { id: 'q8', round: 'ROUND 2 · THINK FAST', type: 'ordering', prompt: 'Put these events in chronological order, earliest first.', items: ['Moon landing', 'First iPhone', 'World Wide Web invented'], answer: ['Moon landing', 'World Wide Web invented', 'First iPhone'], points: 1000, duration: 45 },
   { id: 'q9', round: 'ROUND 2 · THINK FAST', type: 'matching', prompt: 'Match each country to its capital.', items: ['France', 'Italy', 'Spain'], options: ['Paris', 'Rome', 'Madrid'], answer: { France: 'Paris', Italy: 'Rome', Spain: 'Madrid' }, points: 1200, duration: 45 },
   { id: 'q10', round: 'ROUND 2 · THINK FAST', type: 'categorise', prompt: 'Sort these into the right category.', items: ['Apple', 'Carrot', 'Banana', 'Pea'], categories: ['Fruit', 'Vegetable'], answer: { Apple: 'Fruit', Carrot: 'Vegetable', Banana: 'Fruit', Pea: 'Vegetable' }, points: 1200, duration: 45 },
   { id: 'q11', round: 'ROUND 2 · THINK FAST', type: 'list', prompt: 'Name the three primary colours of light.', answer: ['Red', 'Green', 'Blue'], points: 1200, duration: 45 },
-  { id: 'q12', round: 'ROUND 2 · THINK FAST', type: 'anagram', prompt: 'Unscramble the word.', answer: 'Platypus', points: 1000, duration: 30 },
+  { id: 'q12', round: 'ROUND 2 · THINK FAST', type: 'anagram', prompt: 'Unscramble This:', answer: 'Platypus', points: 1000, duration: 30 },
 ]
 
 export const freshGame = (): Game => ({

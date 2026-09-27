@@ -3,8 +3,14 @@ import { anagramDisplay, normalise, type Grade, type GradeVerdict, type Player, 
 const clamp = (value: number, minimum = 0, maximum = 1) => Math.min(maximum, Math.max(minimum, value))
 export const roundScore = (value: number) => Math.max(0, Math.round(value / 10) * 10)
 
-export function normaliseQuestion(question: Question): Question {
-  const { scoreMode: _legacyScoreMode, ...clean } = question
+type LegacyQuestion = Omit<Question, 'type'> & { type: Question['type'] | 'free' }
+
+export function normaliseQuestion(question: Question | LegacyQuestion): Question {
+  const raw = question as LegacyQuestion
+  const migrated: Question = raw.type === 'free'
+    ? { ...raw, type: 'text', answer: Array.isArray(raw.answer) ? raw.answer : String(raw.answer || '').trim() ? [String(raw.answer).trim()] : [] }
+    : raw as Question
+  const { scoreMode: _legacyScoreMode, ...clean } = migrated
   const points = Math.max(0, Math.round(Number(clean.points) || 0))
   const duration = Math.max(1, Math.round(Number(clean.duration) || 30))
   const placementMode = ['single', 'boolean', 'text'].includes(clean.type) && clean.placementMode === 'fastest-correct'
@@ -37,8 +43,7 @@ export const questionInstruction = (question: Question): string => question.plac
   single: 'Pick the correct answer · Correct = full points.',
   multi: 'Select every correct answer · Wrong selections reduce your score.',
   boolean: 'Choose True or False · Correct = full points.',
-  text: 'Type your answer · Accepted answers score automatically; the Host checks other wording.',
-  free: 'Write your answer · The Host awards 0%, 50% or 100%.',
+  text: 'Write your answer · Accepted answers score automatically; the Host checks other responses.',
   number: 'Enter your best answer · The closer you are, the more you score.',
   closest: 'Guess the number · Points are awarded by closest position.',
   ordering: 'Put everything in order · More correct ordering = more points.',
@@ -53,7 +58,6 @@ export const questionInstruction = (question: Question): string => question.plac
 export function scoringSummary(question: Question): string {
   const maximum = `${roundScore(question.points).toLocaleString()} max`
   if (question.placementMode === 'fastest-correct') return `${maximum} · Fastest correct`
-  if (question.type === 'free') return `${maximum} · Host judged 0 / 50 / 100%`
   if (question.type === 'text') return `${maximum} · Auto match + Host verification`
   if (question.type === 'closest') return `${maximum} · Closest position`
   if (['anagram', 'photo-reveal', 'photo-zoom'].includes(question.type)) return `${maximum} · Earlier solve scores more`
@@ -126,7 +130,6 @@ function automaticGrade(question: Question, response: Response | undefined, open
   if (!response) return { ...common, points: 0, verdict: 'unanswered', detail: 'No answer submitted' }
   const maximum = roundScore(question.points)
   const value = response.value
-  if (question.type === 'free') return { ...common, points: 0, verdict: 'pending', detail: 'Waiting for Host marking' }
   if (question.type === 'text') {
     const correct = answerMatches(question, value)
     return correct

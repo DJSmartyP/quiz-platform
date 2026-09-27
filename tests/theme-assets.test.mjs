@@ -7,6 +7,8 @@ import sharp from 'sharp'
 const themes = [
   'quiz-show', 'western', 'neon-sci-fi', 'arcane-fantasy', 'monster-mash', 'celebration',
   'retro-sports', 'pixel-cinema', 'world-tour', 'synthwave-festival', 'deep-sea', 'detective-noir',
+  'music-charts', 'food-drink', 'history-time', 'science-lab', 'nature-wildlife', 'british-pub',
+  'video-game-arcade', 'books-literature', 'tv-streaming', 'around-britain',
 ]
 
 test('every selectable theme has its definition, CSS tokens and complete scene artwork', async () => {
@@ -28,7 +30,7 @@ test('every selectable theme has its definition, CSS tokens and complete scene a
     assert.ok((await stat(player)).size > 1_000, `${theme}/player.webp is empty or missing`)
   }
   assert.ok(css.includes('var(--theme-player)'), 'player screens do not use the portrait theme scene')
-  assert.match(css, /\.theme-celebration\{[^}]*--theme-font:'Bungee Shade'/)
+  assert.match(css, /\.theme-celebration\{[^}]*--theme-font:'Fredoka'/)
 })
 
 test('avatar manifests use compact transparent WebP display assets', async () => {

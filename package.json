@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/prune-dist.mjs",
+    "optimize:themes": "node scripts/optimize-theme-packs.mjs",
     "lint": "oxlint",
     "test": "node --test tests/*.test.mjs",
     "preview": "vite preview"

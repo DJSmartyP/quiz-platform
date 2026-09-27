@@ -74,8 +74,8 @@ test('fastest correct uses authoritative server order, correct-only denominator 
   assert.deepEqual([grades.first.points, grades.tie.points, grades.last.points, grades.wrong.points], [1000, 1000, 700, 0])
 })
 
-test('free responses remain pending until a manual grade is preserved', () => {
-  const question = base('free', undefined)
+test('written answers without accepted answers remain pending until a manual grade is preserved', () => {
+  const question = base('text', [])
   const response = reply(question, 'p', 'Creative answer')
   assert.equal(scoreQuestion(question, [response], ['p'])[0].verdict, 'pending')
   const manual = { playerId: 'p', questionId: question.id, points: 500, committed: false, verdict: 'partial', detail: 'Host awarded partial credit', source: 'manual' }
@@ -92,6 +92,18 @@ test('text answers auto-mark accepted wording and queue other wording for Host v
   assert.match(review.detail, /Host verification/)
   const manual = { playerId: 'review', questionId: question.id, points: 1000, committed: false, verdict: 'correct', detail: 'Host awarded full credit', source: 'override' }
   assert.deepEqual(scoreQuestion(question, [reply(question, 'review', 'Auld Reekie')], ['review'], { existingGrades: [manual] })[0], manual)
+})
+
+test('legacy free responses migrate to the combined written-answer type', async () => {
+  const { normaliseQuestion } = await import('../src/scoring.ts')
+  const withReference = normaliseQuestion(base('free', 'Expected wording'))
+  const withoutReference = normaliseQuestion(base('free', undefined))
+  assert.equal(withReference.type, 'text')
+  assert.deepEqual(withReference.answer, ['Expected wording'])
+  assert.equal(scoreQuestion(withReference, [reply(withReference, 'match', 'expected wording')], ['match'])[0].verdict, 'correct')
+  assert.equal(withoutReference.type, 'text')
+  assert.deepEqual(withoutReference.answer, [])
+  assert.equal(scoreQuestion(withoutReference, [reply(withoutReference, 'review', 'Creative reply')], ['review'])[0].verdict, 'pending')
 })
 
 test('player instructions state both the mechanic and the scoring rule', () => {

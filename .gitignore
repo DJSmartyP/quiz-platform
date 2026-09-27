@@ -12,6 +12,8 @@ dist
 review/theme-backgrounds/
 dist-ssr
 design-pack/
+output/
+tmp/
 *.local
 
 # Editor directories and files

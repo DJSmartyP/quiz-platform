@@ -44,7 +44,7 @@ let channel: BroadcastChannel | null = null
 function bindChannel() {
   channel?.close()
   channel = 'BroadcastChannel' in window ? new BroadcastChannel(scopedKey(key)) : null
-  channel?.addEventListener('message', event => { if (!liveRole) { game = event.data as Game; notify() } })
+  channel?.addEventListener('message', event => { if (!liveRole) { const next = event.data as Game; game = { ...next, questions: next.questions.map(normaliseQuestion) }; notify() } })
 }
 bindChannel()
 
@@ -76,7 +76,7 @@ function save(next: Game) {
   channel?.postMessage(next)
   notify()
 }
-window.addEventListener('storage', event => { if (!liveRole && event.key === scopedKey(key) && event.newValue) { game = JSON.parse(event.newValue) as Game; notify() } })
+window.addEventListener('storage', event => { if (!liveRole && event.key === scopedKey(key) && event.newValue) { const next = JSON.parse(event.newValue) as Game; game = { ...next, questions: next.questions.map(normaliseQuestion) }; notify() } })
 window.addEventListener('storage', event => {
   if (event.key !== scopedKey(libraryKey) || !event.newValue) return
   try { quizLibrary = JSON.parse(event.newValue) as QuizTemplate[]; activeQuizId = localStorage.getItem(scopedKey(activeQuizKey)) || quizLibrary[0]?.id; librarySnapshot = { quizzes: quizLibrary, activeQuizId }; notify() } catch { /* Ignore incomplete cross-tab writes. */ }
@@ -101,7 +101,10 @@ export function scopeQuizWorkspace(uid: string, migrateLegacy = false) {
   if (!quizLibrary.some(item => item.id === activeQuizId)) activeQuizId = starter.id
   try {
     const storedGame = localStorage.getItem(scopedKey(key))
-    game = storedGame ? JSON.parse(storedGame) as Game : migrateLegacy && activeQuizId !== starter.id ? previousGame : gameFromQuiz(quizLibrary.find(item => item.id === activeQuizId) || starter)
+    if (storedGame) {
+      const loaded = JSON.parse(storedGame) as Game
+      game = { ...loaded, questions: loaded.questions.map(normaliseQuestion) }
+    } else game = migrateLegacy && activeQuizId !== starter.id ? { ...previousGame, questions: previousGame.questions.map(normaliseQuestion) } : gameFromQuiz(quizLibrary.find(item => item.id === activeQuizId) || starter)
   } catch { game = gameFromQuiz(quizLibrary.find(item => item.id === activeQuizId) || starter) }
   liveRole = null
   bindChannel()
@@ -124,12 +127,13 @@ export function leaveLiveRole(role?: 'host' | 'player' | 'screen') {
   notify()
 }
 export function receiveLiveGame(next: Game, role: 'host' | 'player' | 'screen') {
+  const migrated = { ...next, questions: next.questions.map(normaliseQuestion) }
   const ownId = role === 'player' ? sessionStorage.getItem('quiz-demo-player-id') : null
-  const ownResponses = ownId && liveRole === 'player' ? game.responses.filter(r => r.playerId === ownId && r.questionId === next.questions[next.questionIndex]?.id) : []
+  const ownResponses = ownId && liveRole === 'player' ? game.responses.filter(r => r.playerId === ownId && r.questionId === migrated.questions[migrated.questionIndex]?.id) : []
   const ownPlayer = ownId && liveRole === 'player' ? game.players.find(p => p.id === ownId) : undefined
   liveRole = role
-  game = { ...next,
-    players: ownPlayer && !next.players.some(p => p.id === ownPlayer.id) ? [...next.players, ownPlayer] : next.players,
+  game = { ...migrated,
+    players: ownPlayer && !migrated.players.some(p => p.id === ownPlayer.id) ? [...migrated.players, ownPlayer] : migrated.players,
     responses: role === 'player' ? ownResponses : next.responses,
   }
   notify()

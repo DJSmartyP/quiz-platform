@@ -129,7 +129,7 @@ test('own reveal distinguishes right, wrong, partial and unmarked answers', () =
   assert.equal(resultForAnswer(q, undefined, undefined, [], 1000).verdict, 'unanswered')
   const text = { ...q, type: 'text', answer: ['Mars'] }
   assert.equal(resultForAnswer(text, response('The red planet'), undefined, [], 1000).verdict, 'pending')
-  const manual = { ...q, type: 'free', answer: undefined }
+  const manual = { ...q, type: 'text', answer: [] }
   assert.equal(resultForAnswer(manual, response('A creative reply'), undefined, [], 1000).verdict, 'pending')
   assert.equal(resultForAnswer(manual, response('A creative reply'), { points: 500, verdict: 'partial', detail: 'Host awarded partial credit', source: 'manual' }, [], 1000).points, 500)
   const anagram = { ...q, type: 'anagram', answer: 'Platypus' }
