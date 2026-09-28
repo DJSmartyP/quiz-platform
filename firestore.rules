@@ -66,7 +66,7 @@ service cloud.firestore {
       match /sessions/{code} {
         allow get, list: if activeHost(uid) || isAdmin();
         allow create: if activeHost(uid) && request.resource.data.ownerUid == uid && request.resource.data.code == code;
-        allow update: if activeHost(uid) && resource.data.ownerUid == uid && request.resource.data.ownerUid == uid && request.resource.data.code == code;
+        allow update: if isAdmin() || (activeHost(uid) && resource.data.ownerUid == uid && request.resource.data.ownerUid == uid && request.resource.data.code == code);
         allow delete: if (activeHost(uid) && resource.data.ownerUid == uid) || isAdmin();
       }
     }
@@ -95,6 +95,11 @@ service cloud.firestore {
            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['controllerId']))
         )
       ) || (
+        isAdmin() && request.resource.data.hostUid == resource.data.hostUid &&
+        request.resource.data.memberUids == resource.data.memberUids &&
+        request.resource.data.stateVersion == resource.data.stateVersion + 1 &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stateVersion', 'answerCount', 'game', 'openedAtServer', 'endedAt', 'deleteAfterMs'])
+      ) || (
         signedIn() && resource.data.memberUids.size() < 50 &&
         !resource.data.memberUids.hasAny([request.auth.uid]) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids']) &&
@@ -114,11 +119,11 @@ service cloud.firestore {
       );
 
       match /private/{documentId} {
-        allow get, list: if isHost(code);
+        allow get, list: if isHost(code) || isAdmin();
         allow create: if activeHost(request.auth.uid) && documentId == 'engine' &&
           getAfter(/databases/$(database)/documents/liveGames/$(code)).data.hostUid == request.auth.uid &&
           request.resource.data.hostUid == request.auth.uid;
-        allow update: if isHost(code) && documentId == 'engine' &&
+        allow update: if (isHost(code) || isAdmin()) && documentId == 'engine' &&
           request.resource.data.hostUid == resource.data.hostUid &&
           request.resource.data.stateVersion == resource.data.stateVersion + 1;
         allow delete: if isHost(code) || isAdmin();
@@ -150,7 +155,7 @@ service cloud.firestore {
             request.time < live.openedAtServer + duration.value(live.game.questions[live.game.questionIndex].duration, 's');
         }
         allow get: if isHost(code) || (signedIn() && responseId.matches('^' + request.auth.uid + '_[^/]+$'));
-        allow list: if isHost(code);
+        allow list: if isHost(code) || isAdmin();
         allow create: if validSubmission();
         allow update: if false;
         allow delete: if isHost(code) || isAdmin();
@@ -158,7 +163,7 @@ service cloud.firestore {
 
       match /results/{resultId} {
         allow get: if isHost(code) || (signedIn() && resultId.matches('^' + request.auth.uid + '_[^/]+$'));
-        allow list: if isHost(code);
+        allow list: if isHost(code) || isAdmin();
         allow create, update: if isHost(code);
         allow delete: if isHost(code) || isAdmin();
       }

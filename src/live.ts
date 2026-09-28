@@ -83,6 +83,14 @@ export type AdminQuizRecord = {
   updatedAt: number
   builtIn: boolean
 }
+export type AdminSessionRecord = LiveSessionRecord & {
+  ownerName: string
+  ownerEmail: string
+  phase?: Game['phase']
+  playerCount: number
+  stateVersion?: number
+  createdAtMs: number
+}
 function newGameCode() {
   const values = crypto.getRandomValues(new Uint8Array(6))
   return [...values].map(value => codeAlphabet[value % codeAlphabet.length]).join('')
@@ -248,6 +256,35 @@ export async function listAdminQuizzes(accounts?: HostAccount[]): Promise<AdminQ
   return libraries.flat().sort((a, b) => b.updatedAt - a.updatedAt || a.title.localeCompare(b.title))
 }
 
+function timestampMillis(value: unknown) {
+  const timestamp = value as { seconds?: number; toMillis?: () => number } | undefined
+  return Number(timestamp?.toMillis?.() || (timestamp?.seconds ? timestamp.seconds * 1000 : 0))
+}
+
+/** Platform-wide session inventory assembled from each Host's protected index. */
+export async function listAdminSessions(accounts?: HostAccount[]): Promise<AdminSessionRecord[]> {
+  if (!await hasAdminSession()) throw new Error('Administrator access is required.')
+  const hosts = accounts || await listHostAccounts()
+  const inventories = await Promise.all(hosts.map(async account => {
+    const snapshot = await getDocs(collection(hostDb, 'users', account.uid, 'sessions'))
+    return Promise.all(snapshot.docs.map(async item => {
+      const record = { code: item.id, ...item.data() } as LiveSessionRecord
+      const publicSnapshot = await getDoc(doc(hostDb, 'liveGames', item.id))
+      const publicData = publicSnapshot.data() as PublicDocument | undefined
+      return {
+        ...record,
+        ownerName: account.displayName || 'Quiz Host',
+        ownerEmail: account.email,
+        phase: publicData?.game?.phase,
+        playerCount: publicData?.memberUids?.length || 0,
+        stateVersion: publicData?.stateVersion,
+        createdAtMs: timestampMillis(record.createdAt),
+      } satisfies AdminSessionRecord
+    }))
+  }))
+  return inventories.flat().sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active') || b.createdAtMs - a.createdAtMs || a.code.localeCompare(b.code))
+}
+
 export async function setHostAccountStatus(uid: string, status: 'active' | 'suspended') {
   if (!await hasAdminSession()) throw new Error('Administrator access is required.')
   await updateDoc(doc(hostDb, 'users', uid), { status, updatedAt: serverTimestamp() })
@@ -331,6 +368,47 @@ export async function deleteLiveSession(code: string) {
   if (current.exists()) await deleteDoc(publicRef)
   await deleteDoc(doc(hostDb, 'users', ownerUid, 'sessions', upper)).catch(() => undefined)
   if (localStorage.getItem(hostCodeKey(uid)) === upper) localStorage.removeItem(hostCodeKey(uid))
+}
+
+/** Force an active session closed while preserving it for the normal 24-hour audit window. */
+export async function closeAdminSession(code: string, ownerUid: string) {
+  if (!await hasAdminSession()) throw new Error('Administrator access is required.')
+  const upper = code.trim().toUpperCase()
+  const publicRef = doc(hostDb, 'liveGames', upper)
+  const privateRef = doc(hostDb, 'liveGames', upper, 'private', 'engine')
+  const sessionRef = doc(hostDb, 'users', ownerUid, 'sessions', upper)
+  await runTransaction(hostDb, async tx => {
+    const [published, engine] = await Promise.all([tx.get(publicRef), tx.get(privateRef)])
+    if (!published.exists()) {
+      tx.set(sessionRef, { code: upper, ownerUid, status: 'ended', endedAt: serverTimestamp(), deleteAfterMs: Date.now() + sessionRetentionMs }, { merge: true })
+      return
+    }
+    if (published.data().hostUid !== ownerUid) throw new Error('Session ownership changed. Refresh and try again.')
+    const currentVersion = Number(published.data().stateVersion || 0)
+    if (!engine.exists() || Number(engine.data().stateVersion || 0) !== currentVersion) throw new Error('Session state is incomplete. Delete the session instead.')
+    const next = structuredClone((engine.data() as PrivateDocument).game)
+    next.phase = 'closed-game'
+    next.returnPhase = undefined
+    next.openedAt = undefined
+    next.closesAt = undefined
+    next.closedAt = Date.now()
+    next.stateVersion = currentVersion + 1
+    const deleteAfterMs = Date.now() + sessionRetentionMs
+    tx.update(privateRef, { stateVersion: next.stateVersion, game: serialise(next) })
+    tx.update(publicRef, { stateVersion: next.stateVersion, game: serialise(publicGame(next)), endedAt: serverTimestamp(), deleteAfterMs })
+    tx.set(sessionRef, { code: upper, ownerUid, title: next.title, status: 'ended', endedAt: serverTimestamp(), deleteAfterMs }, { merge: true })
+  })
+}
+
+/** Immediately remove any Host's session and protected child data. Admin only. */
+export async function deleteAdminSession(code: string, ownerUid: string) {
+  if (!await hasAdminSession()) throw new Error('Administrator access is required.')
+  const upper = code.trim().toUpperCase()
+  const current = await getDoc(doc(hostDb, 'liveGames', upper))
+  if (current.exists() && current.data().hostUid !== ownerUid) throw new Error('Session ownership changed. Refresh and try again.')
+  for (const name of ['responses', 'results', 'players', 'private'] as const) await deleteSessionCollection(upper, name)
+  if (current.exists()) await deleteDoc(current.ref)
+  await deleteDoc(doc(hostDb, 'users', ownerUid, 'sessions', upper)).catch(() => undefined)
 }
 
 /** Spark-plan cleanup: delete ended sessions on the first Studio visit after 24 hours. */
