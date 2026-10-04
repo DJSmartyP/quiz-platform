@@ -133,9 +133,11 @@ service cloud.firestore {
         allow get: if isHost(code) || (signedIn() && request.auth.uid == uid);
         allow list: if exists(/databases/$(database)/documents/liveGames/$(code));
         allow create: if signedIn() && request.auth.uid == uid &&
-          request.resource.data.keys().hasOnly(['name', 'avatarId']) &&
+          request.resource.data.keys().hasOnly(['name', 'avatarId', 'activeFromQuestionIndex', 'waitForQuestionAnnouncement']) &&
           request.resource.data.name is string && request.resource.data.name.size() > 0 &&
           request.resource.data.name.size() <= 24 && request.resource.data.avatarId is string &&
+          request.resource.data.activeFromQuestionIndex is int &&
+          request.resource.data.waitForQuestionAnnouncement is bool &&
           getAfter(/databases/$(database)/documents/liveGames/$(code)).data.memberUids.hasAny([uid]);
         allow update: if false;
         allow delete: if isHost(code) || isAdmin();

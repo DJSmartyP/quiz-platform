@@ -33,6 +33,7 @@ sessionStorage.setItem('quiz-host-controller-id', controllerId)
 type PublicDocument = { hostUid: string; controllerId: string; memberUids: string[]; stateVersion: number; answerCount?: number; game: Game; openedAtServer?: { toMillis(): number } }
 type PrivateDocument = { hostUid: string; stateVersion: number; game: Game; openedAtServer?: { toMillis(): number } }
 type HostCommand = { type: 'advance' | 'break' | 'resume' | 'void' | 'grade' | 'grade-all-zero' | 'extend' | 'late-joins' | 'end'; playerId?: string; points?: number; enabled?: boolean }
+export type LateJoinGate = { activeFromQuestionIndex: number; waitForQuestionAnnouncement: boolean }
 export type LiveSessionRecord = {
   code: string
   ownerUid: string
@@ -493,7 +494,7 @@ export async function startLiveHost(onStatus: (message: string, canControl: bool
     renderHost()
   }, error => onStatus(`Game sync error: ${error.message}`, false))
   const stopRoster = onSnapshot(collection(hostDb, 'liveGames', code, 'players'), result => {
-    roster = result.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0 }))
+    roster = result.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0, activeFromQuestionIndex: item.data().activeFromQuestionIndex, waitForQuestionAnnouncement: item.data().waitForQuestionAnnouncement }))
     renderHost()
   }, error => onStatus(`Player sync error: ${error.message}`, false))
   const stopControl = onSnapshot(publicRef, snap => {
@@ -653,7 +654,7 @@ export function followLiveScreen(code: string, onError: (message: string) => voi
     onConnected()
   }, error => onError(error.message))
   const stopRoster = onSnapshot(collection(screenDb, 'liveGames', upper, 'players'), result => {
-    roster = result.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0 }))
+    roster = result.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0, activeFromQuestionIndex: item.data().activeFromQuestionIndex, waitForQuestionAnnouncement: item.data().waitForQuestionAnnouncement }))
     render()
   }, error => onError(error.message))
   return () => { stopGame(); stopRoster() }
@@ -667,17 +668,39 @@ export async function joinLiveGame(code: string, name: string, avatarId: string,
   const playerRef = doc(playerDb, 'liveGames', upper, 'players', uid)
   const trimmed = name.trim().replace(/\s+/g, ' ')
   if (!trimmed || trimmed.length > 24) throw new Error('Choose a name of 1–24 characters.')
-  await runTransaction(playerDb, async tx => {
+  const lateJoinGate = await runTransaction<LateJoinGate | null>(playerDb, async tx => {
     const current = await tx.get(publicRef)
     const existing = await tx.get(playerRef)
     if (!current.exists()) throw new Error('Game no longer exists.')
-    if (existing.exists()) return
+    if (existing.exists()) {
+      const saved = existing.data()
+      return saved.waitForQuestionAnnouncement === true && Number.isInteger(saved.activeFromQuestionIndex)
+        ? { activeFromQuestionIndex: Number(saved.activeFromQuestionIndex), waitForQuestionAnnouncement: true }
+        : null
+    }
     const live = current.data() as PublicDocument
     if (live.memberUids.length >= 50) throw new Error('Game full — 50 players have joined.')
     if (live.game.phase !== 'lobby' && !live.game.allowLateJoins) throw new Error('This game has already started.')
     if (live.game.players.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) throw new Error('That name is already in use.')
+    const phase = live.game.phase === 'break' ? live.game.returnPhase : live.game.phase
+    let activeFromQuestionIndex = live.game.questionIndex
+    let waitForQuestionAnnouncement = false
+    if (phase === 'round-intro') waitForQuestionAnnouncement = true
+    else if (['open', 'closed', 'reveal', 'scores', 'round-scores', 'leaderboard'].includes(phase || '')) {
+      activeFromQuestionIndex += 1
+      waitForQuestionAnnouncement = true
+    }
+    const gate = waitForQuestionAnnouncement
+      ? { activeFromQuestionIndex, waitForQuestionAnnouncement }
+      : null
     tx.update(publicRef, { memberUids: [...live.memberUids, uid] })
-    tx.set(playerRef, { name: trimmed, avatarId })
+    tx.set(playerRef, {
+      name: trimmed,
+      avatarId,
+      activeFromQuestionIndex: gate?.activeFromQuestionIndex ?? live.game.questionIndex,
+      waitForQuestionAnnouncement: Boolean(gate),
+    })
+    return gate
   })
   playerConnection?.stop()
   let stopResponse: Unsubscribe | null = null
@@ -690,7 +713,7 @@ export async function joinLiveGame(code: string, name: string, avatarId: string,
   const render = () => {
     if (!publicState) return
     const next = withRoster(publicState, roster)
-    if (!next.players.some(player => player.id === uid)) next.players.push({ id: uid, name: trimmed, avatarId, score: 0 })
+    if (!next.players.some(player => player.id === uid)) next.players.push({ id: uid, name: trimmed, avatarId, score: 0, activeFromQuestionIndex: lateJoinGate?.activeFromQuestionIndex, waitForQuestionAnnouncement: lateJoinGate?.waitForQuestionAnnouncement })
     receiveLiveGame(next, 'player')
   }
   const watchOwnQuestion = (questionId: string, attempt = 0) => {
@@ -737,7 +760,7 @@ export async function joinLiveGame(code: string, name: string, avatarId: string,
     }
   }, error => { onConnection?.(false); onError(`Game sync unavailable: ${error.message}`) })
   stopRoster = onSnapshot(collection(playerDb, 'liveGames', upper, 'players'), result => {
-    roster = result.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0 }))
+    roster = result.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0, activeFromQuestionIndex: item.data().activeFromQuestionIndex, waitForQuestionAnnouncement: item.data().waitForQuestionAnnouncement }))
     render()
   }, error => onError(`Player list unavailable: ${error.message}`))
   playerConnection = { code: upper, uid, stop: () => { stopGame(); stopResponse?.(); stopResult?.(); stopRoster?.(); if (retryTimer !== null) window.clearTimeout(retryTimer) } }

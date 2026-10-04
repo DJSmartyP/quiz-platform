@@ -49,7 +49,7 @@ export function advanceGame(previous: Game): Game {
 }
 
 export function breakGame(previous: Game): Game {
-  if (!['scores', 'round-scores', 'leaderboard', 'round-intro'].includes(previous.phase)) return previous
+  if (!['reveal', 'scores', 'round-scores', 'leaderboard', 'round-intro'].includes(previous.phase)) return previous
   return { ...previous, returnPhase: previous.phase, phase: 'break', stateVersion: previous.stateVersion + 1 }
 }
 

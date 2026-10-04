@@ -156,7 +156,7 @@ export type Question = {
   imageAlt?: string
 }
 
-export type Player = { id: string; name: string; avatarId: string; score: number }
+export type Player = { id: string; name: string; avatarId: string; score: number; activeFromQuestionIndex?: number; waitForQuestionAnnouncement?: boolean }
 export type ServerOrder = { seconds: number; nanoseconds: number }
 export type Response = { playerId: string; questionId: string; value: unknown; submittedAt: number; submittedAtServer?: ServerOrder }
 export type GradeVerdict = 'correct' | 'partial' | 'incorrect' | 'pending' | 'unanswered'
