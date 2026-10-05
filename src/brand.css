@@ -494,8 +494,8 @@
 .player-scoring-preview small{color:var(--theme-accent);font-size:9px;font-weight:900;letter-spacing:.12em}.player-scoring-preview strong{color:#fff;font-size:17px}.player-scoring-preview span{color:var(--live-muted);font-size:13px;line-height:1.4}
 
 /* Stable Main Screen question geometry: header, flexible focus, answers, fixed status. */
-.screen-question-focus{display:flex;flex:1 1 auto;min-height:0;flex-direction:column;align-items:stretch;justify-content:center;overflow:hidden}
-.screen-question-focus>h1{flex:1 1 auto;min-height:100px!important;max-height:clamp(170px,30vh,330px);margin:clamp(8px,1.5vh,18px) auto!important}
+.screen-question-focus{display:flex;flex:1 0 auto;min-height:min-content;flex-direction:column;align-items:stretch;justify-content:center}
+.screen-question-focus>h1{flex:0 0 auto;min-height:0!important;max-height:none;margin:clamp(8px,1.5vh,18px) auto!important}
 .screen-question.has-media .screen-question-focus>h1{flex:0 1 auto;min-height:76px!important;max-height:clamp(100px,17vh,180px);margin-bottom:clamp(8px,1.2vh,14px)!important}
 .screen-question-focus>.question-media{flex:1 1 auto;height:auto;min-height:150px;max-height:clamp(210px,36vh,390px);margin:0 auto clamp(8px,1.3vh,16px)}
 .screen-answer-area{flex:0 0 auto;width:100%;margin-top:auto}
@@ -576,6 +576,24 @@
   .screen-question.type-anagram .anagram-board{min-height:145px;padding:14px 20px}
   .screen-question.type-anagram .anagram-letters span{width:clamp(44px,4vw,64px);height:clamp(52px,4.8vw,74px);font-size:clamp(28px,3vw,44px)}
 }
+
+/* Keep intrinsic prompt height visible; the slide fitter handles crowded screens.
+   A zero flex basis on media inside an auto-height focus could hide the image. */
+.theme-surface .screen-question .screen-question-focus>h1{min-height:0!important;max-height:none;overflow-wrap:break-word}
+.screen-question.has-media .screen-question-focus>.question-media{
+  flex:0 0 auto;
+  height:clamp(160px,30vh,340px);
+  max-height:none;
+  margin-bottom:8px;
+}
+.screen-question.has-media .screen-question-focus>.question-media.photo-zoom{
+  width:min(100%,clamp(160px,30vh,340px));
+  aspect-ratio:1;
+}
+.screen-question.has-media .reveal-stage{margin:8px 0}
+.screen-question.has-media .reveal-kicker{margin-bottom:8px;font-size:11px}
+.screen-question.has-media .reveal-stage.single-answer .reveal-tile{min-height:70px;padding:10px 24px}
+.screen-question.has-media .reveal-stage.single-answer .reveal-tile strong{font-size:clamp(26px,3vw,46px)}
 
 /* Avoid eagerly decoding every large transparent avatar in the picker. */
 .avatar-grid button{content-visibility:auto;contain-intrinsic-size:96px}

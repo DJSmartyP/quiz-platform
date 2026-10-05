@@ -890,7 +890,7 @@ function WinnersPodium({ players, packs }: { players: Player[]; packs: Pack[] })
     </div>
   </div>
 }
-function MainScreen() {
+function MainScreen({ previewGame }: { previewGame?: Game } = {}) {
   const { code } = useParams()
   const nav = useNavigate()
   const slideRef = useRef<HTMLDivElement>(null)
@@ -905,7 +905,7 @@ function MainScreen() {
     const stop = followLiveScreen(code, setConnectionError, () => setConnectedCode(code))
     return () => { stop(); leaveLiveRole('screen') }
   }, [code])
-  const game=useGame(), packs=usePacks(), q=currentQuestion(game), liveTheme=currentTheme(game)
+  const storedGame=useGame(), game=previewGame || storedGame, packs=usePacks(), q=currentQuestion(game), liveTheme=currentTheme(game)
   const sceneCopy = quizThemes[liveTheme][game.phase === 'break' ? 'break' : 'finale']
   useThemeScenePreload(liveTheme, 'screen')
   const showQ=['question','open','closed','reveal'].includes(game.phase)
@@ -950,8 +950,8 @@ function MainScreen() {
     const clean = enteredCode.trim().toUpperCase()
     if (clean) nav(`/screen/${clean}`)
   }
-  if (!code) return <div className="screen screen-launcher pixelplay-screen-launcher" style={{backgroundImage:`linear-gradient(90deg,#03070ee8,#07101ad6),url("${asset('themes/quiz-show/background.webp')}")`}}><div className="screen-launcher-card"><XPPlayLogo/><div className="eyebrow">MAIN SCREEN · PRESENTATION DISPLAY</div><h1>Connect the big screen</h1><p>Enter the code created by the XP Studio Host console. XP Play will then follow that live game automatically.</p><label>LIVE GAME CODE<input autoFocus maxLength={6} value={enteredCode} onChange={event=>setEnteredCode(event.target.value.toUpperCase())} onKeyDown={event=>event.key==='Enter'&&openCode()} placeholder="ABC123"/></label><Button onClick={openCode} disabled={!enteredCode.trim()}>Launch XP Play <ArrowRight size={18}/></Button><small>The game-specific Main Screen link fills this in automatically.</small><div className="screen-launcher-powered"><XPPlayCredit/></div></div></div>
-  if (code && connectedCode !== code) return <div className="screen"><div className="screen-centre"><h1>{connectionError || 'Connecting to the live game…'}</h1></div></div>
+  if (!code && !previewGame) return <div className="screen screen-launcher pixelplay-screen-launcher" style={{backgroundImage:`linear-gradient(90deg,#03070ee8,#07101ad6),url("${asset('themes/quiz-show/background.webp')}")`}}><div className="screen-launcher-card"><XPPlayLogo/><div className="eyebrow">MAIN SCREEN · PRESENTATION DISPLAY</div><h1>Connect the big screen</h1><p>Enter the code created by the XP Studio Host console. XP Play will then follow that live game automatically.</p><label>LIVE GAME CODE<input autoFocus maxLength={6} value={enteredCode} onChange={event=>setEnteredCode(event.target.value.toUpperCase())} onKeyDown={event=>event.key==='Enter'&&openCode()} placeholder="ABC123"/></label><Button onClick={openCode} disabled={!enteredCode.trim()}>Launch XP Play <ArrowRight size={18}/></Button><small>The game-specific Main Screen link fills this in automatically.</small><div className="screen-launcher-powered"><XPPlayCredit/></div></div></div>
+  if (code && !previewGame && connectedCode !== code) return <div className="screen"><div className="screen-centre"><h1>{connectionError || 'Connecting to the live game…'}</h1></div></div>
   return <div className={`screen theme-surface theme-${liveTheme} phase-${game.phase}`} style={themeSurfaceStyle(liveTheme)}>{connectionError&&<div className="error" role="alert">{connectionError}</div>}<div className="screen-top"><div className="screen-brand-block"><XPPlayLogo compact/><div className="screen-event"><strong>{game.title}</strong><small>{q?.round || "GET READY TO PLAY"}</small></div></div><div className="screen-code"><small>XP PLAY PORTAL</small><strong className="screen-portal">{location.host}{location.pathname}#/join</strong><span className="screen-code-value"><small>CODE</small><b>{game.code}</b></span><span className="screen-live">● LIVE</span><button className="screen-fullscreen" onClick={()=>void toggleFullscreen()} aria-label={isFullscreen?'Exit fullscreen':'Enter fullscreen'}><Maximize2 size={17}/>{isFullscreen?'Exit':'Fullscreen'}</button></div></div><div className="screen-content">{game.phase==='lobby'?<div ref={slideRef} className="screen-lobby"><span className="big-star">✦</span><div className="eyebrow">GET READY TO PLAY</div><h1>{game.title}</h1><p>Scan to open XP Play, then enter</p><div className="lobby-join"><PlayerPortalQr value={`${location.origin}${location.pathname}#/join`}/><div><small>XP PLAY PLAYER PORTAL</small><strong>{location.host}{location.pathname}#/join</strong><div className="giant-code">{game.code}</div></div></div><div className="joined-avatars">{game.players.slice(0,8).map(p=><PlayerAvatar key={p.id} player={p} packs={packs} size={64}/>)}</div><small>{game.players.length} {game.players.length===1?'player':'players'} joined</small></div>:game.phase==='round-intro'?<div ref={slideRef} className="screen-centre round-intro-screen"><span className="round-kicker">UP NEXT</span><h1>{q.round.replace(' · ','\n')}</h1><p>Get ready. The next question is coming.</p></div>:showQ?<div ref={slideRef} className={`screen-question type-${q.type} ${q.imageUrl?"has-media":""}`}><div className="screen-q-head"><span>{q.round}</span><span>QUESTION {game.questionIndex+1} / {game.questions.length}</span></div><div className="screen-type"><span><small>QUESTION TYPE</small><strong>{typeNames[q.type]}</strong></span><p><b>HOW TO ANSWER</b>{questionInstruction(q)}</p><em className="screen-scoring">{scoringSummary(q).toUpperCase()}</em></div><div className="screen-question-focus"><h1>{q.prompt}</h1><QuestionMediaStage game={game} question={q}/>{q.type==='anagram'&&game.phase!=='reveal'&&<AnagramBoard game={game} question={q}/>}</div><div className="screen-answer-area"><AnswerStage question={q} revealed={game.phase==='reveal'}/>{game.phase!=='reveal'&&['ordering','matching','categorise'].includes(q.type)&&q.items&&<div className="screen-items">{q.items.map(item=><span key={item}>{item}</span>)}</div>}</div><div className="screen-question-status"><Countdown game={game} className="screen-timer"/>{game.phase==='reveal'?<div className="screen-reveal-caption"><Sparkles size={18}/> {q.explanation || 'The correct answer is highlighted above.'}</div>:<div className="screen-footline"><span>{game.phase==='open'?'Answers open':game.phase==='closed'?'Answers closed':'Get ready to answer'}</span><span>{game.answerCount || 0} answers received</span></div>}</div></div>:['scores','round-scores','leaderboard','final'].includes(game.phase)?<MainScoreboard game={game} question={q} packs={packs} slideRef={slideRef}/>:game.phase==='podium'?<div ref={slideRef} className="screen-podium-wrap"><WinnersPodium players={game.players} packs={packs}/></div>:<div ref={slideRef} className={`screen-centre phase-scene-copy ${game.phase==='break'?'break-copy':'thanks-copy'}`}><span className="scene-symbol" aria-hidden="true">{sceneCopy.symbol}</span><span className="scene-kicker">{sceneCopy.kicker}</span><h1>{sceneCopy.title}</h1><p>{sceneCopy.screen}</p></div>}</div><div className="screen-bottom"><XPPlayCredit/><span>{phaseNames[game.phase].toUpperCase()}</span></div></div>
 }
 
@@ -999,17 +999,20 @@ function QuestionLayoutPreview() {
   const q = previewParams.get('media') === '1' && !baseQuestion.imageUrl
     ? { ...baseQuestion, prompt: `${baseQuestion.prompt} Use the picture shown below.`, imageUrl: asset('themes/around-britain/background.webp'), imageAlt: 'British landmarks and countryside' }
     : baseQuestion
+  const themeParam = previewParams.get('theme') as QuizTheme
+  const theme = quizThemeIds.includes(themeParam) ? themeParam : 'quiz-show'
+  const phaseParam = previewParams.get('phase')
+  const phase = phaseParam === 'open' || phaseParam === 'closed' || phaseParam === 'reveal' ? phaseParam : 'question'
+  const now = Date.now()
   const game: Game = {
-    code: 'LAYOUT', title: 'XP Play Layout Review', theme: 'quiz-show', introTheme: 'quiz-show', exitTheme: 'quiz-show',
-    phase: 'question', questionIndex: 0, stateVersion: 1, allowLateJoins: false, players: [], responses: [], grades: [], questions: [q], answerCount: 4,
+    code: 'LAYOUT', title: 'XP Play Layout Review', theme, introTheme: theme, exitTheme: theme,
+    phase, questionIndex: 0, stateVersion: 1, allowLateJoins: false, players: [], responses: [], grades: [], questions: [q], answerCount: 4,
+    openedAt: now - 10000, closesAt: now + ((q.duration || 30) - 10) * 1000,
+    closedAt: now + ((q.duration || 30) - 10) * 1000,
   }
-  useThemeScenePreload(game.theme, 'screen')
-  return <div className="screen theme-surface theme-quiz-show phase-question" style={themeSurfaceStyle('quiz-show')}>
-    <div className="screen-top"><div className="screen-brand-block"><XPPlayLogo compact/><div className="screen-event"><strong>{game.title}</strong><small>{q.round}</small></div></div><div className="screen-code"><small>XP PLAY PORTAL</small><strong className="screen-portal">xpplay.example/join</strong><span className="screen-code-value"><small>CODE</small><b>{game.code}</b></span><span className="screen-live">● LAYOUT QA</span></div></div>
-    <div className="screen-content"><div className={`screen-question type-${q.type} ${q.imageUrl ? 'has-media' : ''}`}><div className="screen-q-head"><span>{q.round}</span><span>QUESTION 1 / 1</span></div><div className="screen-type"><span><small>QUESTION TYPE</small><strong>{typeNames[q.type]}</strong></span><p><b>HOW TO ANSWER</b>{questionInstruction(q)}</p><em className="screen-scoring">{scoringSummary(q).toUpperCase()}</em></div><div className="screen-question-focus"><h1>{q.prompt}</h1><QuestionMediaStage game={game} question={q}/>{q.type === 'anagram' && <AnagramBoard game={game} question={q}/>}</div><div className="screen-answer-area"><AnswerStage question={q} revealed={false}/>{['ordering','matching','categorise'].includes(q.type) && q.items && <div className="screen-items">{q.items.map(item => <span key={item}>{item}</span>)}</div>}</div><div className="screen-question-status"><div className="screen-footline"><span>Get ready to answer</span><span>{game.answerCount} answers received</span></div></div></div></div>
-    <div className="screen-bottom"><XPPlayCredit/><span>QUESTION DISPLAY</span></div>
-  </div>
+  return <MainScreen previewGame={game}/>
 }
+
 function Join() {
   const { code: routeCode } = useParams()
   const game=useGame(), packs=usePacks(), [name,setName]=useState(()=>localStorage.getItem('xp-play-name')||''), [selected,setSelected]=useState(()=>localStorage.getItem('xp-play-avatar')||'default-blue'), [packId,setPackId]=useState(()=>localStorage.getItem('xp-play-avatar-pack')||'default'), [error,setError]=useState(''), [code,setCode]=useState(routeCode || ''), [answer,setAnswer]=useState<unknown>('')
