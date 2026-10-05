@@ -1003,7 +1003,7 @@ function QuestionLayoutPreview() {
   const theme = quizThemeIds.includes(themeParam) ? themeParam : 'quiz-show'
   const phaseParam = previewParams.get('phase')
   const phase = phaseParam === 'open' || phaseParam === 'closed' || phaseParam === 'reveal' ? phaseParam : 'question'
-  const now = Date.now()
+  const [now] = useState(() => Date.now())
   const game: Game = {
     code: 'LAYOUT', title: 'XP Play Layout Review', theme, introTheme: theme, exitTheme: theme,
     phase, questionIndex: 0, stateVersion: 1, allowLateJoins: false, players: [], responses: [], grades: [], questions: [q], answerCount: 4,
