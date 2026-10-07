@@ -144,13 +144,20 @@ service cloud.firestore {
       }
 
       match /media/{questionId} {
-        allow get: if exists(/databases/$(database)/documents/liveGames/$(code)) &&
-          session(code).data.game.questions[session(code).data.game.questionIndex].id == questionId &&
-          session(code).data.game.phase in ['question', 'open', 'closed', 'reveal'];
+        // Media is written only when its question is displayed. Keeping already
+        // published media readable avoids revoking a Main Screen listener while
+        // the public game document and its phase change arrive separately.
+        allow get: if exists(/databases/$(database)/documents/liveGames/$(code));
         allow list: if isHost(code) || isAdmin();
         allow create, update: if isHost(code) &&
           request.resource.data.keys().hasOnly(['questionId', 'imageUrl', 'answerImageUrl']) &&
           request.resource.data.questionId == questionId &&
+          getAfter(/databases/$(database)/documents/liveGames/$(code)).data.game.questions[
+            getAfter(/databases/$(database)/documents/liveGames/$(code)).data.game.questionIndex
+          ].id == questionId &&
+          getAfter(/databases/$(database)/documents/liveGames/$(code)).data.game.phase in ['question', 'reveal'] &&
+          (!request.resource.data.keys().hasAny(['answerImageUrl']) ||
+            getAfter(/databases/$(database)/documents/liveGames/$(code)).data.game.phase == 'reveal') &&
           (!request.resource.data.keys().hasAny(['imageUrl']) ||
             (request.resource.data.imageUrl is string && request.resource.data.imageUrl.size() <= 150000)) &&
           (!request.resource.data.keys().hasAny(['answerImageUrl']) ||
