@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { currentQuestion, freshGame, isLastQuestionInRound, normalise, ranked, responseFor, scrambleWord, type Game, type Phase, type Question, type QuizTheme } from './model'
 import { advanceGame, breakGame, resumeGame } from './gameEngine'
 import { normaliseQuestion, scoreQuestion } from './scoring'
+import { groupQuestionsByRound } from './rounds'
 
 const key = 'quiz-platform-demo-v1'
 const libraryKey = 'quiz-platform-library-v1'
@@ -12,7 +13,7 @@ let game: Game = (() => {
   try {
     const loaded = JSON.parse(localStorage.getItem(key) || '') as Game
     loaded.theme = loaded.theme || 'quiz-show'
-    loaded.questions = loaded.questions.map(q => normaliseQuestion(q.type === 'anagram' && !q.scramble ? { ...q, scramble: scrambleWord(String(q.answer)) } : q))
+    loaded.questions = groupQuestionsByRound(loaded.questions.map(q => normaliseQuestion(q.type === 'anagram' && !q.scramble ? { ...q, scramble: scrambleWord(String(q.answer)) } : q)))
     if (loaded.phase === 'open' && loaded.openedAt && !loaded.closesAt) loaded.closesAt = loaded.openedAt + (loaded.questions[loaded.questionIndex].duration || 30) * 1000
     if (loaded.phase === 'scores' && isLastQuestionInRound(loaded)) loaded.phase = 'round-scores'
     localStorage.setItem(key, JSON.stringify(loaded))
@@ -23,7 +24,7 @@ export type QuizTemplate = { id: string; title: string; theme: QuizTheme; introT
 let quizLibrary: QuizTemplate[] = (() => {
   try {
     const loaded = JSON.parse(localStorage.getItem(libraryKey) || '') as QuizTemplate[]
-    if (Array.isArray(loaded) && loaded.length) return loaded.map(quiz => ({ ...quiz, theme: quiz.theme || 'quiz-show', questions: quiz.questions.map(normaliseQuestion) }))
+    if (Array.isArray(loaded) && loaded.length) return loaded.map(quiz => ({ ...quiz, theme: quiz.theme || 'quiz-show', questions: groupQuestionsByRound(quiz.questions.map(normaliseQuestion)) }))
   } catch { /* Migrate the existing single quiz below. */ }
   return [{ id: 'quizforge-test', title: game.title, theme: game.theme, introTheme: game.introTheme, exitTheme: game.exitTheme, roundThemes: game.roundThemes, questions: structuredClone(game.questions), builtIn: true, updatedAt: Date.now() }]
 })()
@@ -151,7 +152,7 @@ export function update(fn: (draft: Game) => void) {
   save(draft)
 }
 function gameFromQuiz(quiz: QuizTemplate): Game {
-  return { ...freshGame(), title: quiz.title, theme: quiz.theme || 'quiz-show', introTheme: quiz.introTheme || quiz.theme || 'quiz-show', exitTheme: quiz.exitTheme || quiz.theme || 'quiz-show', roundThemes: structuredClone(quiz.roundThemes || {}), questions: structuredClone(quiz.questions).map(normaliseQuestion), code: game.code }
+  return { ...freshGame(), title: quiz.title, theme: quiz.theme || 'quiz-show', introTheme: quiz.introTheme || quiz.theme || 'quiz-show', exitTheme: quiz.exitTheme || quiz.theme || 'quiz-show', roundThemes: structuredClone(quiz.roundThemes || {}), questions: groupQuestionsByRound(structuredClone(quiz.questions).map(normaliseQuestion)), code: game.code }
 }
 export function createQuiz(title = 'Untitled Quiz') {
   if (liveRole) throw new Error('Leave the live session before changing quizzes.')
@@ -218,7 +219,7 @@ export function deleteQuiz(id: string) {
 }
 export function replaceQuizLibrary(quizzes: QuizTemplate[]) {
   if (liveRole || !quizzes.length) return
-  quizLibrary = structuredClone(quizzes).map(quiz => ({ ...quiz, theme: quiz.theme || 'quiz-show', questions: quiz.questions.map(normaliseQuestion) }))
+  quizLibrary = structuredClone(quizzes).map(quiz => ({ ...quiz, theme: quiz.theme || 'quiz-show', questions: groupQuestionsByRound(quiz.questions.map(normaliseQuestion)) }))
   if (!quizLibrary.some(item => item.id === activeQuizId)) activeQuizId = quizLibrary[0].id
   persistLibrary()
   const active = quizLibrary.find(item => item.id === activeQuizId)

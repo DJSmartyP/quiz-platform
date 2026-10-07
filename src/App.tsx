@@ -9,6 +9,7 @@ import { presentationImage, questionMediaSize } from './questionMedia'
 import QRCode from 'qrcode'
 import AdminDashboard from './AdminDashboard'
 import { answerMatches, normaliseQuestion, questionInstruction, scoringSummary } from './scoring'
+import { insertInRound, moveToRound, roundNames as getRoundNames } from './rounds'
 import './App.css'
 import './brand.css'
 
@@ -546,10 +547,18 @@ function Editor() {
   }
   if (activeTemplate?.builtIn) return <Shell active="Quiz editor"><main className="page editor-page"><div className="page-heading"><div><div className="eyebrow dark">QUIZ EDITOR</div><h1>{game.title}</h1><p>The built-in test quiz stays unchanged so it is always available for connection tests.</p></div></div><div className="editor-locked"><ShieldCheck size={34}/><h2>Keep the test quiz as your baseline</h2><p>Create an editable copy containing all {game.questions.length} existing questions, then change its title, rounds, formats and answers.</p><Button onClick={()=>void copyStarter()}><Copy size={17}/> Copy test quiz to edit</Button></div></main></Shell>
   if (!draft) return null
-  const roundNames = [...new Set(game.questions.map(question => question.round))]
+  const roundNames = getRoundNames(game.questions)
   const originalRound = game.questions[selected]?.round || draft.round
   const roundQuestionCount = game.questions.filter(question => question.round === originalRound).length
   const isDirty = JSON.stringify(draft) !== JSON.stringify(game.questions[selected]) || titleDraft !== game.title || themeDraft !== game.theme || introThemeDraft !== (game.introTheme || game.theme) || exitThemeDraft !== (game.exitTheme || game.theme) || roundThemeDraft !== (game.roundThemes?.[draft.round] || '')
+  const syncStructure = async (message: string) => {
+    try {
+      const template = getActiveQuizTemplate()
+      if (template) await saveQuizTemplateCloud(template)
+      setValidation(message)
+      setSavedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+    } catch (error) { setValidation(`Changed in this browser, but cloud sync failed: ${(error as Error).message}`) }
+  }
   const save = async () => {
     const word = String(draft.answer || '').trim()
     if (!titleDraft.trim()) { setValidation('Enter a quiz name.'); return }
@@ -558,18 +567,26 @@ function Editor() {
     const mediaSize = game.questions.reduce((total, question, index) => total + questionMediaSize(index === selected ? draft : question), 0)
     if (mediaSize > 650_000) { setValidation('This quiz contains too much uploaded image data. Use hosted image URLs or remove an image.'); return }
     const prepared = normaliseQuestion(draft.type === 'anagram' ? {...draft, round: draft.round.trim(), answer: word, duration: Math.max(10, draft.duration || 30), scramble: scrambleWord(word)} : {...draft, round: draft.round.trim()})
+    if (prepared.round !== originalRound && !roundNames.includes(prepared.round)) { setValidation('Create a round first, then move this question into it.'); return }
+    let nextSelected = selected
     setSaving(true)
     update(gameDraft => {
       gameDraft.title = titleDraft.trim()
       gameDraft.theme = themeDraft
       gameDraft.introTheme = introThemeDraft
       gameDraft.exitTheme = exitThemeDraft
-      gameDraft.questions[selected] = prepared
+      if (prepared.round === originalRound) gameDraft.questions[selected] = prepared
+      else {
+        const moved = moveToRound(gameDraft.questions, prepared.id, prepared.round)
+        gameDraft.questions = moved.questions.map(question => question.id === prepared.id ? prepared : question)
+        nextSelected = moved.index
+      }
       const roundThemes = { ...(gameDraft.roundThemes || {}) }
       if (roundThemeDraft) roundThemes[prepared.round] = roundThemeDraft
       else delete roundThemes[prepared.round]
       gameDraft.roundThemes = roundThemes
     })
+    if (nextSelected !== selected) setSelected(nextSelected)
     const template = getActiveQuizTemplate()
     try {
       if (template) await saveQuizTemplateCloud(template)
@@ -583,24 +600,40 @@ function Editor() {
     setTimeout(() => setSaved(false), 2200)
   }
   const duplicate = () => {
+    if (isDirty) { setValidation('Save the current question before duplicating it.'); return }
     const nextIndex = selected + 1
     update(gameDraft => { gameDraft.questions.splice(nextIndex, 0, { ...structuredClone(draft), id: crypto.randomUUID(), prompt: 'New question' }) })
     setSelected(nextIndex)
+    void syncStructure('Question duplicated.')
   }
-  const addQuestion = () => {
-    const nextIndex = game.questions.length
-    const question: Question = { id: crypto.randomUUID(), round: draft.round || 'ROUND 1', type: 'single', prompt: 'New question', options: ['Answer A', 'Answer B', 'Answer C', 'Answer D'], answer: 'Answer A', points: 1000, placementMode: 'none', duration: 30 }
-    update(gameDraft => { gameDraft.questions.push(question) })
+  const addQuestion = (targetRound = originalRound) => {
+    if (isDirty) { setValidation('Save the current question before adding another.'); return }
+    const question: Question = { id: crypto.randomUUID(), round: targetRound, type: 'single', prompt: 'New question', options: ['Answer A', 'Answer B', 'Answer C', 'Answer D'], answer: 'Answer A', points: 1000, placementMode: 'none', duration: 30 }
+    let nextIndex = game.questions.length
+    update(gameDraft => { const inserted = insertInRound(gameDraft.questions, question); gameDraft.questions = inserted.questions; nextIndex = inserted.index })
     setSelected(nextIndex)
+    void syncStructure(`Question added to ${targetRound}.`)
+  }
+  const createRound = () => {
+    if (isDirty) { setValidation('Save the current question before creating a round.'); return }
+    const suggested = `ROUND ${roundNames.length + 1}`
+    const name = prompt('Name the new round', suggested)?.trim()
+    if (!name) return
+    if (roundNames.some(round => round.toLocaleLowerCase() === name.toLocaleLowerCase())) { setValidation('That round name is already in use.'); return }
+    addQuestion(name)
   }
   const deleteQuestion = () => {
+    if (isDirty) { setValidation('Save the current question before deleting it.'); return }
     if (game.questions.length <= 1 || !confirm('Delete this question from the quiz?')) return
     update(gameDraft => { gameDraft.questions.splice(selected, 1); gameDraft.questionIndex = Math.min(gameDraft.questionIndex, gameDraft.questions.length - 1) })
     setSelected(Math.max(0, selected - 1))
+    void syncStructure('Question deleted.')
   }
   const renameRound = () => {
     const nextName = draft.round.trim()
     if (!nextName) { setValidation('Enter the new round name first.'); return }
+    if (JSON.stringify({ ...draft, round: originalRound }) !== JSON.stringify(game.questions[selected]) || titleDraft !== game.title || themeDraft !== game.theme || introThemeDraft !== (game.introTheme || game.theme) || exitThemeDraft !== (game.exitTheme || game.theme)) { setValidation('Save other question and quiz changes before renaming the round.'); return }
+    if (nextName !== originalRound && roundNames.some(round => round.toLocaleLowerCase() === nextName.toLocaleLowerCase())) { setValidation('That round name is already in use.'); return }
     update(gameDraft => {
       for (const question of gameDraft.questions) if (question.round === originalRound) question.round = nextName
       if (gameDraft.roundThemes?.[originalRound]) {
@@ -610,12 +643,15 @@ function Editor() {
     })
     setValidation('')
     setSaved(true)
+    void syncStructure(`Round renamed to ${nextName}.`)
   }
   const move = (direction: -1 | 1) => {
+    if (isDirty) { setValidation('Save the current question before changing its order.'); return }
     const nextIndex = selected + direction
-    if (nextIndex < 0 || nextIndex >= game.questions.length) return
+    if (nextIndex < 0 || nextIndex >= game.questions.length || game.questions[nextIndex].round !== originalRound) return
     update(gameDraft => { [gameDraft.questions[selected], gameDraft.questions[nextIndex]] = [gameDraft.questions[nextIndex], gameDraft.questions[selected]] })
     setSelected(nextIndex)
+    void syncStructure('Question order saved.')
   }
   const chooseImage = async (file?: File, answerImage = false) => {
     if (!file) return
@@ -657,18 +693,18 @@ function Editor() {
   }
   const previewTheme = roundThemeDraft || themeDraft
   return <Shell active="Quiz editor"><main className="page editor-page">
-    <div className="page-heading"><div><div className="eyebrow dark">QUIZ EDITOR</div><h1>{game.title}</h1><p>Name rounds, mix question types, and add optional picture stages.</p><span className={`editor-save-state ${isDirty ? 'dirty' : 'ready'}`}>{saving ? 'Saving…' : isDirty ? 'Unsaved changes' : savedAt ? `Saved at ${savedAt}` : 'Saved in this browser'}</span></div><div className="host-head-actions"><Button variant="secondary" onClick={runPreflight}><ShieldCheck size={17}/> Check quiz</Button><Button onClick={addQuestion}><Plus size={17}/> Add question</Button></div></div>
+    <div className="page-heading"><div><div className="eyebrow dark">QUIZ EDITOR</div><h1>{game.title}</h1><p>Build rounds, add questions within each round, and move questions between them.</p><span className={`editor-save-state ${isDirty ? 'dirty' : 'ready'}`}>{saving ? 'Saving…' : isDirty ? 'Unsaved changes' : savedAt ? `Saved at ${savedAt}` : 'Saved in this browser'}</span></div><div className="host-head-actions"><Button variant="secondary" onClick={runPreflight}><ShieldCheck size={17}/> Check quiz</Button><Button variant="secondary" onClick={createRound}><Plus size={17}/> New round</Button><Button onClick={() => addQuestion()}><Plus size={17}/> Add question to {originalRound}</Button></div></div>
     {preflightIssues&&<div className={`preflight-report ${preflightIssues.length?'has-issues':'ready'}`}><strong>{preflightIssues.length ? `${preflightIssues.length} item${preflightIssues.length===1?'':'s'} to check` : 'Quiz ready to host'}</strong>{preflightIssues.length?<ul>{preflightIssues.map(issue=><li key={issue}>{issue}</li>)}</ul>:<span>Every question has the information needed to run.</span>}<button onClick={()=>setPreflightIssues(null)}>Close</button></div>}
     <div className="editor-grid">
-      <div className="editor-list"><div className="editor-list-head"><strong>Questions</strong><span>{countLabel(roundNames.length, 'round')} · {countLabel(game.questions.length, 'question')}</span></div>{game.questions.map((question,index) => <button key={question.id} className={`question-row ${selected===index?'chosen':''}`} onClick={() => setSelected(index)}><span className="question-number">{String(index+1).padStart(2,'0')}</span><span><strong>{question.prompt}</strong><small>{question.round} · {typeNames[question.type]}</small></span></button>)}</div>
+      <div className="editor-list"><div className="editor-list-head"><strong>Rounds</strong><span>{countLabel(roundNames.length, 'round')} · {countLabel(game.questions.length, 'question')}</span></div>{roundNames.map((round, roundIndex) => <section className="editor-round-group" key={round}><div className="editor-round-group-head"><div><small>ROUND {roundIndex + 1}</small><strong>{round}</strong><span>{countLabel(game.questions.filter(question => question.round === round).length, 'question')}</span></div><button type="button" aria-label={`Add question to ${round}`} title={`Add question to ${round}`} onClick={() => addQuestion(round)}><Plus size={17}/></button></div>{game.questions.map((question,index) => question.round === round ? <button key={question.id} className={`question-row ${selected===index?'chosen':''}`} onClick={() => { if (isDirty) { setValidation('Save the current question before selecting another.'); return } setSelected(index) }}><span className="question-number">{String(index+1).padStart(2,'0')}</span><span><strong>{question.prompt}</strong><small>{typeNames[question.type]}</small></span></button> : null)}</section>)}</div>
       <div className="editor-form">
         <div className="form-top"><div><Badge>{draft.round}</Badge><h2>Question {selected+1}</h2></div><Badge tone="gray">{scoringSummary(draft)}</Badge></div>
         <label htmlFor="question-type">Question type<select id="question-type" value={draft.type} onChange={event=>setDraft(changeQuestionType(draft,event.target.value as QuestionType))}>{questionTypes.map(type=><option key={type} value={type}>{typeNames[type]}</option>)}</select></label>
         <label htmlFor="question-prompt">Question prompt<textarea id="question-prompt" value={draft.prompt} onChange={event=>setDraft({...draft,prompt:event.target.value})}/></label>
         <div className="editor-round-card"><div><small>ROUND</small><strong>{originalRound}</strong><span>{roundQuestionCount} {roundQuestionCount === 1 ? 'question' : 'questions'} scored together</span></div><div className="editor-round-actions"><Button variant="secondary" onClick={()=>void duplicateRound()}><Copy size={15}/> Duplicate round</Button><Button variant="secondary" onClick={renameRound} disabled={draft.round.trim() === originalRound}>Rename whole round</Button></div></div>
         <div className="editor-round-row">
-          <label>Assign to round<select value={roundNames.includes(draft.round) ? draft.round : '__custom'} onChange={event => { if (event.target.value !== '__custom') { const round = event.target.value; setDraft({...draft,round}); setRoundThemeDraft(game.roundThemes?.[round] || '') } }}>{roundNames.map(name=><option key={name} value={name}>{name}</option>)}<option value="__custom">New round…</option></select></label>
-          <label>Round name<input value={draft.round} onChange={event=>setDraft({...draft,round:event.target.value})} placeholder="ROUND 1 · WARM UP"/><small className="field-help">Questions with the same name form one round.</small></label>
+          <label>Move question to round<select value={roundNames.includes(draft.round) ? draft.round : originalRound} onChange={event => { const round = event.target.value; setDraft({...draft,round}); setRoundThemeDraft(game.roundThemes?.[round] || '') }}>{roundNames.map(name=><option key={name} value={name}>{name}</option>)}</select><small className="field-help">Save to move this question into the selected round.</small></label>
+          <label>Round name<input value={draft.round} onChange={event=>setDraft({...draft,round:event.target.value})} placeholder="ROUND 1 · WARM UP"/><small className="field-help">To rename all questions in this round, edit the name and press “Rename whole round”.</small></label>
         </div>
         <label className="editor-round-theme">Round visual theme<select value={roundThemeDraft} onChange={event=>setRoundThemeDraft(event.target.value as QuizTheme | '')}><option value="">Use quiz default · {quizThemes[themeDraft].name}</option>{quizThemeIds.map(theme=><option key={theme} value={theme}>{quizThemes[theme].name}</option>)}</select><small className="field-help">Applies to every question in {draft.round || 'this round'}. Leave on default to match the rest of the quiz.</small></label>
         <details className="editor-settings">
@@ -699,7 +735,7 @@ function Editor() {
         {['single','boolean','text'].includes(draft.type)&&<label className="placement-toggle"><input type="checkbox" checked={draft.placementMode==='fastest-correct'} onChange={event=>setDraft({...draft,placementMode:event.target.checked?'fastest-correct':'none'})}/><span><strong>Fastest Correct</strong><small>All correct players earn at least 70%; faster correct answers earn more.</small></span></label>}
         <div className="editor-note"><Trophy size={18}/><span><strong>{scoringSummary(draft)}</strong><br/>{questionInstruction(draft)}</span></div>
         <div className="editor-note"><CircleHelp size={18}/> A round can contain any number and mix of question types. XP Studio shows round scores after the final consecutive question in that round, then carries those points into the overall leaderboard.</div>
-        <div className="editor-order-actions"><Button variant="secondary" onClick={duplicate}><Plus size={16}/> Duplicate</Button><Button variant="secondary" disabled={selected===0} onClick={()=>move(-1)}>Move up</Button><Button variant="secondary" disabled={selected===game.questions.length-1} onClick={()=>move(1)}>Move down</Button><Button variant="danger" disabled={game.questions.length<=1} onClick={deleteQuestion}><Trash2 size={15}/> Delete</Button></div>
+        <div className="editor-order-actions"><Button variant="secondary" onClick={duplicate}><Plus size={16}/> Duplicate</Button><Button variant="secondary" disabled={selected===0 || game.questions[selected-1]?.round !== originalRound} onClick={()=>move(-1)}>Move up</Button><Button variant="secondary" disabled={selected===game.questions.length-1 || game.questions[selected+1]?.round !== originalRound} onClick={()=>move(1)}>Move down</Button><Button variant="danger" disabled={game.questions.length<=1} onClick={deleteQuestion}><Trash2 size={15}/> Delete</Button></div>
         <div className="form-actions editor-save-bar"><Button onClick={()=>void save()} disabled={saving || imageBusy}>{saving?<>Saving…</>:saved&&!isDirty?<><Check size={17}/> Saved</>:<>Save question <ArrowRight size={17}/></>}</Button><Link className="text-link" to="/host">Go to Host <ArrowRight size={16}/></Link></div>
       </div>
     </div>
