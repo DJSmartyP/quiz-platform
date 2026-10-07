@@ -253,7 +253,7 @@
 .screen-options.is-revealed>div.correct{background:linear-gradient(120deg,#174b3c,#247558);border-color:#78f4ac;box-shadow:0 0 32px #56e99d88, inset 0 0 24px #a6ffd21c;transform:scale(1.035);z-index:1}
 .screen-options.is-revealed>div.correct::after{content:'✦';position:absolute;right:20px;top:-8px;color:#fff7a2;font-size:35px;animation:reveal-spark 1.7s ease-in-out infinite}
 .screen-options .option-check{color:#d8ffe7;flex:none}
-.question-media{position:relative;width:min(860px,100%);height:clamp(230px,31vh,370px);flex:0 0 auto;margin:0 auto 24px;border:2px solid var(--live-border);border-radius:16px;overflow:hidden;background:#080614;box-shadow:0 18px 45px #08041166}.question-media>img{display:block;width:100%;height:100%;object-fit:contain;transition:transform .25s linear;will-change:transform}.question-media.photo-zoom>img{object-fit:contain}.photo-cover{position:absolute;inset:0;display:grid;grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(4,1fr);gap:2px;background:transparent}.photo-cover i{background:linear-gradient(135deg,#4f2992,#21133e);border:1px solid #a764ff33;opacity:1;transform:scale(1);transition:opacity .45s,transform .45s}.photo-cover i.gone{opacity:0;transform:scale(.72);pointer-events:none}.photo-progress{position:absolute;left:50%;bottom:9px;transform:translateX(-50%);padding:6px 12px;border-radius:999px;background:#0c071bdd;color:#fff;font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.question-media{position:relative;width:min(860px,100%);height:clamp(230px,31vh,370px);flex:0 0 auto;margin:0 auto 24px;border:2px solid var(--live-border);border-radius:16px;overflow:hidden;background:#080614;box-shadow:0 18px 45px #08041166}.question-media>img{display:block;width:100%;height:100%;object-fit:contain;transition:transform .25s linear;will-change:transform}.question-media.photo-zoom>img{object-fit:contain}.photo-cover{position:absolute;inset:0;display:grid;grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(4,1fr);gap:0;background:transparent}.photo-cover i{background:linear-gradient(135deg,#4f2992,#21133e);border:0;opacity:1;transform:scale(1);transition:opacity .45s,transform .45s}.photo-cover i.gone{opacity:0;transform:scale(.72);pointer-events:none}.photo-progress{position:absolute;left:50%;bottom:9px;transform:translateX(-50%);padding:6px 12px;border-radius:999px;background:#0c071bdd;color:#fff;font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
 .reveal-stage{margin:20px 0;animation:reveal-rise .55s both}
 .reveal-kicker{display:block;color:#ffe69a;text-align:center;font-size:13px;font-weight:900;letter-spacing:3px;margin-bottom:17px}
 .reveal-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
@@ -657,3 +657,11 @@
 @media(max-height:820px) and (min-width:751px){.podium-heading p{display:none}.podium-stage{margin-top:12px}.podium-avatar img{width:100px!important;height:100px!important}.place-1 .podium-avatar img{width:132px!important;height:132px!important}.podium-block{min-height:60px;padding-top:10px}.place-1 .podium-block{min-height:105px}.place-2 .podium-block{min-height:76px}.place-3 .podium-block{min-height:58px}.podium-player>b{margin-bottom:7px}}
 @media(max-width:760px){.preflight-report,.editor-round-card{align-items:stretch;flex-direction:column}.editor-round-actions{justify-content:stretch}.editor-round-actions .btn{flex:1}.screen-fullscreen{display:none!important}.player-connection{padding:6px;font-size:0!important}.player-connection svg{width:17px;height:17px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+/* Cover exactly the photograph, with no gaps exposing clues between panels. */
+.screen-question.has-media .screen-question-focus>.question-media.photo-reveal{
+  width:min(100%,calc(clamp(160px,30vh,340px) * var(--question-image-ratio,1)));
+  height:auto;
+  aspect-ratio:var(--question-image-ratio,1);
+  border:0;
+}

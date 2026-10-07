@@ -79,7 +79,7 @@ test('main screen stays inside one viewport and auto-fits oversized question sli
   assert.match(css, /\.question-media\{[^}]*height:clamp\(230px,31vh,370px\)[^}]*margin:0 auto 24px/)
   assert.ok(app.includes('new ResizeObserver(fitSlide)'))
   assert.ok(app.includes('slide.style.setProperty(\'--slide-scale\', String(scale))'))
-  assert.ok(app.includes('ref={slideRef} className={`screen-question type-${q.type} ${q.imageUrl?"has-media":""}`}'))
+  assert.ok(app.includes('ref={slideRef} className={`screen-question type-${q.type} ${presentationImage(q,game.phase).url?"has-media":""}`}'))
   assert.ok(app.includes('className="screen-question-focus"'))
   assert.ok(app.includes('className="screen-answer-area"'))
   assert.ok(app.includes('className="screen-question-status"'))

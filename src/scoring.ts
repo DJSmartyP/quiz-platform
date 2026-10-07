@@ -18,7 +18,10 @@ export function normaliseQuestion(question: Question | LegacyQuestion): Question
   const numberBands = clean.type === 'number'
     ? normaliseNumberBands(clean.numberBands?.length ? clean.numberBands : [{ tolerance: Math.max(0, Number(clean.tolerance) || 0), fraction: 1 }])
     : undefined
-  return { ...clean, points, duration, placementMode, numberBands }
+  const answer = clean.type === 'text' && Array.isArray(clean.answer)
+    ? clean.answer.map(value => value.trim()).filter(Boolean)
+    : clean.answer
+  return { ...clean, answer, points, duration, placementMode, numberBands }
 }
 
 export function normaliseNumberBands(bands: Question['numberBands']) {

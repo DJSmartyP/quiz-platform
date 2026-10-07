@@ -154,6 +154,8 @@ export type Question = {
   anagramSolution?: string
   imageUrl?: string
   imageAlt?: string
+  answerImageUrl?: string
+  answerImageAlt?: string
 }
 
 export type Player = { id: string; name: string; avatarId: string; score: number; activeFromQuestionIndex?: number; waitForQuestionAnnouncement?: boolean }
@@ -221,21 +223,23 @@ export const typeInstructions: Record<QuestionType, string> = {
 }
 
 export function scrambleWord(answer: string): string {
-  return answer.replace(/[A-Za-z]{2,}/g, word => {
-    const letters = word.toUpperCase().split('')
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      const shuffled = [...letters]
-      for (let i = shuffled.length - 1; i > 0; i -= 1) {
-        const j = Math.floor(Math.random() * (i + 1))
-        ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-      }
-      if (shuffled.join('') !== letters.join('')) return shuffled.join('')
+  const source = answer.toUpperCase()
+  const letters = [...source].filter(char => /[A-Z]/.test(char))
+  let shuffled = [...letters]
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    shuffled = [...letters]
+    for (let i = shuffled.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
     }
-    const other = letters.findIndex(letter => letter !== letters[0])
-    if (other < 0) return word.toUpperCase()
-    ;[letters[0], letters[other]] = [letters[other], letters[0]]
-    return letters.join('')
-  })
+    if (shuffled.join('') !== letters.join('')) break
+  }
+  if (shuffled.join('') === letters.join('')) {
+    const other = shuffled.findIndex(letter => letter !== shuffled[0])
+    if (other > 0) [shuffled[0], shuffled[other]] = [shuffled[other], shuffled[0]]
+  }
+  let index = 0
+  return source.replace(/[A-Z]/g, () => shuffled[index++])
 }
 
 function seededOrder(positions: number[], seedText: string) {

@@ -26,7 +26,11 @@ export function publicGame(source: Game): Game {
       anagramSolution: showQuestion && question.id === active?.id && question.type === 'anagram' ? String(question.answer || '') : undefined,
       imageUrl: showQuestion && question.id === active?.id ? question.imageUrl : undefined,
       imageAlt: showQuestion && question.id === active?.id ? question.imageAlt : undefined,
-      answer: releasedAnswer && question.id === active?.id ? question.answer : undefined,
+      answerImageUrl: releasedAnswer && question.id === active?.id ? question.answerImageUrl : undefined,
+      answerImageAlt: releasedAnswer && question.id === active?.id ? question.answerImageAlt : undefined,
+      answer: releasedAnswer && question.id === active?.id
+        ? question.type === 'text' && Array.isArray(question.answer) ? question.answer[0] : question.answer
+        : undefined,
       explanation: releasedAnswer && question.id === active?.id ? question.explanation : undefined,
     })),
     responses: [],

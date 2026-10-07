@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app'
 import { browserLocalPersistence, getAuth, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup, signOut, type Auth, type User } from 'firebase/auth'
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, limit, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch, type Unsubscribe } from 'firebase/firestore'
 import { advanceGame, breakGame, extendAnswerTime, resumeGame, setLateJoining } from './gameEngine'
-import { currentQuestion, isLastQuestionInRound, type Game, type Player, type Response } from './model'
+import { currentQuestion, isLastQuestionInRound, scrambleWord, type Game, type Player, type Response } from './model'
 import { publicGame } from './publicGame'
 import { resultForGrade, type OwnResult } from './reveal'
 import { normaliseQuestion, roundScore } from './scoring'
@@ -461,6 +461,7 @@ export async function startLiveHost(onStatus: (message: string, canControl: bool
       return
     }
     const initial: Game = serialise({ ...getGame(), code, phase: 'lobby', questionIndex: 0,
+      questions: getGame().questions.map(question => question.type === 'anagram' ? { ...question, scramble: scrambleWord(String(question.answer || '')) } : question),
       stateVersion: 1, players: [], responses: [], grades: [],
       openedAt: undefined, closesAt: undefined, closedAt: undefined, returnPhase: undefined })
     tx.set(publicRef, { hostUid: uid, controllerId, memberUids: [], stateVersion: initial.stateVersion, answerCount: 0, game: serialise(publicGame(initial)) })

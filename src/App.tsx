@@ -5,6 +5,7 @@ import { anagramDisplay, currentQuestion, currentTheme, gradeFor, isAnswerComple
 import { actionLabel, createQuiz, deleteQuiz, duplicateQuiz, expireAnswers, getActiveQuizTemplate, getLiveRole, getQuizLibrarySnapshot, importQuiz, leaveLiveRole, replaceQuizLibrary, scopeQuizWorkspace, selectQuiz, setQuizTheme, update, useGame, useQuizLibrary, type QuizTemplate } from './store'
 import { beginHostPopup, cleanupExpiredSessions, deleteLiveSession, deleteQuizTemplateCloud, followLiveScreen, hasHostSession, joinLiveGame, liveHostCommand, reconnectLivePlayer, restoreHostAccount, saveQuizTemplateCloud, signOutHost, startLiveHost, submitLiveAnswer, syncQuizLibrary, takeLiveControl, type HostAccount } from './live'
 import { answerLabel, type OwnResult } from './reveal'
+import { presentationImage, questionMediaSize } from './questionMedia'
 import QRCode from 'qrcode'
 import AdminDashboard from './AdminDashboard'
 import { answerMatches, normaliseQuestion, questionInstruction, scoringSummary } from './scoring'
@@ -113,6 +114,9 @@ function changeQuestionType(question: Question, type: QuestionType): Question {
   return { ...next, answer: '' }
 }
 function validateQuestionDraft(question: Question) {
+  for (const url of [question.imageUrl, question.answerImageUrl]) {
+    if (url && (typeof url !== 'string' || (!url.startsWith('data:image/') && !/^https:\/\//i.test(url)))) return 'Image URLs must use HTTPS or an uploaded image.'
+  }
   const duration = question.duration ?? 30
   if (!question.round.trim()) return 'Enter a round name.'
   if (!question.prompt.trim()) return 'Enter a question prompt.'
@@ -128,7 +132,7 @@ function validateQuestionDraft(question: Question) {
   }
   if (question.type === 'ordering' && (question.items || []).length < 2) return 'Add at least two items in the correct order.'
   if (question.type === 'list' && (!Array.isArray(question.answer) || question.answer.length < 1)) return 'Add at least one expected answer.'
-  if (question.type === 'text' && (!Array.isArray(question.answer) || question.answer.length < 1)) return 'Add at least one accepted answer.'
+  if (question.type === 'text' && Array.isArray(question.answer) && question.answer.slice(1).some(answer => answer.trim()) && !question.answer[0]?.trim()) return 'Enter the correct answer to display before adding variants.'
   if (['number','closest'].includes(question.type) && !Number.isFinite(Number(question.answer))) return 'Enter a valid correct number.'
   if (question.type === 'number') {
     const bands = question.numberBands || []
@@ -185,7 +189,7 @@ function readQuizPack(text: string): { title: string; theme: QuizTheme; introThe
     if (invalid) throw new Error(`Question ${index + 1}: ${invalid}`)
     return normaliseQuestion(question)
   })
-  const mediaSize = questions.reduce((total, question) => total + (question.imageUrl?.length || 0), 0)
+  const mediaSize = questions.reduce((total, question) => total + questionMediaSize(question), 0)
   if (mediaSize > 650_000) throw new Error('This pack contains too much embedded image data. Use hosted image URLs for larger picture quizzes.')
   const theme = quizThemeIds.includes(source.theme as QuizTheme) ? source.theme as QuizTheme : 'quiz-show'
   const introTheme = quizThemeIds.includes(source.introTheme as QuizTheme) ? source.introTheme as QuizTheme : theme
@@ -310,7 +314,9 @@ function AnagramBoard({ game, question }: {game: Game; question: Question}) {
 
 function QuestionMediaStage({ game, question }: { game: Game; question: Question }) {
   const now = useClock(Boolean(question.imageUrl) && game.phase === 'open')
-  if (!question.imageUrl) return null
+  const [imageRatio, setImageRatio] = useState(1)
+  const image = presentationImage(question, game.phase)
+  if (!image.url) return null
   const at = game.phase === 'closed' ? game.closedAt || now : now
   const elapsed = ['open', 'closed'].includes(game.phase) ? Math.max(0, at - (game.openedAt || at)) : 0
   const progress = game.phase === 'reveal' ? 1 : Math.min(1, elapsed / ((question.duration || 30) * 1000))
@@ -319,8 +325,8 @@ function QuestionMediaStage({ game, question }: { game: Game; question: Question
   const visibleTiles = game.phase === 'reveal' ? 24 : Math.floor(progress * 24)
   const scale = game.phase === 'reveal' ? 1 : 3.4 - progress * 2.4
   const revealedTiles = new Set(photoTileOrder(question.id).slice(0, visibleTiles))
-  return <div className={`question-media ${isReveal ? 'photo-reveal' : ''} ${isZoom ? 'photo-zoom' : ''}`}>
-    <img src={question.imageUrl} alt={question.imageAlt || ''} style={isZoom ? { transform: `scale(${scale})` } : undefined}/>
+  return <div className={`question-media ${isReveal ? 'photo-reveal' : ''} ${isZoom ? 'photo-zoom' : ''}`} style={{'--question-image-ratio': imageRatio} as React.CSSProperties}>
+    <img src={image.url} alt={image.alt} onLoad={event=>setImageRatio(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight || 1)} style={isZoom ? { transform: `scale(${scale})` } : undefined}/>
     {isReveal && <div className="photo-cover" aria-hidden="true">{Array.from({ length: 24 }, (_, index) => <i key={index} className={revealedTiles.has(index) ? 'gone' : ''}/>)}</div>}
     {(isReveal || isZoom) && game.phase !== 'reveal' && <span className="photo-progress">{isReveal ? `${visibleTiles} / 24 panels revealed` : 'The picture is zooming out'}</span>}
   </div>
@@ -328,7 +334,7 @@ function QuestionMediaStage({ game, question }: { game: Game; question: Question
 
 function HostAnswerKey({ question }: { question: Question }) {
   const hasAnswer = question.answer !== undefined && answerLabel(question.answer).trim().length > 0
-  return <div className="host-answer-key"><div><ShieldCheck size={19}/><span>GM ANSWER KEY <small>Visible here before reveal</small></span></div><strong>{hasAnswer ? answerLabel(question.answer) : 'No reference answer — mark each response'}</strong>{question.explanation && <p>{question.explanation}</p>}</div>
+  return <div className="host-answer-key"><div><ShieldCheck size={19}/><span>GM ANSWER KEY <small>Visible here before reveal</small></span></div><strong>{hasAnswer ? answerLabel(question.answer) : 'No reference answer — mark each response'}</strong>{question.answerImageUrl && <img className="host-question-image" src={question.answerImageUrl} alt={question.answerImageAlt || 'Answer image'}/>} {question.explanation && <p>{question.explanation}</p>}</div>
 }
 
 function AnswerStage({ question, revealed }: { question: Question; revealed: boolean }) {
@@ -549,7 +555,7 @@ function Editor() {
     if (!titleDraft.trim()) { setValidation('Enter a quiz name.'); return }
     const invalid = validateQuestionDraft(draft)
     if (invalid) { setValidation(invalid); return }
-    const mediaSize = game.questions.reduce((total, question, index) => total + (index === selected ? draft.imageUrl?.length || 0 : question.imageUrl?.length || 0), 0)
+    const mediaSize = game.questions.reduce((total, question, index) => total + questionMediaSize(index === selected ? draft : question), 0)
     if (mediaSize > 650_000) { setValidation('This quiz contains too much uploaded image data. Use hosted image URLs or remove an image.'); return }
     const prepared = normaliseQuestion(draft.type === 'anagram' ? {...draft, round: draft.round.trim(), answer: word, duration: Math.max(10, draft.duration || 30), scramble: scrambleWord(word)} : {...draft, round: draft.round.trim()})
     setSaving(true)
@@ -611,13 +617,15 @@ function Editor() {
     update(gameDraft => { [gameDraft.questions[selected], gameDraft.questions[nextIndex]] = [gameDraft.questions[nextIndex], gameDraft.questions[selected]] })
     setSelected(nextIndex)
   }
-  const chooseImage = async (file?: File) => {
+  const chooseImage = async (file?: File, answerImage = false) => {
     if (!file) return
     setImageBusy(true)
     setValidation('')
     try {
       const imageUrl = await compressQuestionImage(file)
-      setDraft(current => ({ ...current, imageUrl, imageAlt: current.imageAlt || file.name.replace(/\.[^.]+$/, '') }))
+      setDraft(current => answerImage
+        ? { ...current, answerImageUrl: imageUrl, answerImageAlt: current.answerImageAlt || file.name.replace(/\.[^.]+$/, '') }
+        : { ...current, imageUrl, imageAlt: current.imageAlt || file.name.replace(/\.[^.]+$/, '') })
     }
     catch (error) { setValidation((error as Error).message) }
     finally { setImageBusy(false) }
@@ -681,8 +689,10 @@ function Editor() {
         {['matching','categorise'].includes(draft.type)&&<><label>Items<textarea value={(draft.items||[]).join('\n')} onChange={event=>setDraft({...draft,items:event.target.value.split('\n').map(value=>value.trim()).filter(Boolean)})}/></label><label>{draft.type==='matching'?'Available matches':'Categories'}<textarea value={(draft.type==='matching'?draft.options||[]:draft.categories||[]).join('\n')} onChange={event=>{const values=event.target.value.split('\n').map(value=>value.trim()).filter(Boolean);setDraft(draft.type==='matching'?{...draft,options:values}:{...draft,categories:values})}}/></label><label>Correct pairs<textarea value={draft.answer&&typeof draft.answer==='object'&&!Array.isArray(draft.answer)?Object.entries(draft.answer).map(([item,value])=>`${item} = ${value}`).join('\n'):''} onChange={event=>{const answer=Object.fromEntries(event.target.value.split('\n').map(line=>line.split('=').map(value=>value.trim())).filter(pair=>pair.length===2&&pair[0]&&pair[1]));setDraft({...draft,answer})}}/><small className="field-help">Use one pair per line, for example France = Paris.</small></label></>}
         {draft.type==='list'&&<label>Expected answers<textarea value={Array.isArray(draft.answer)?draft.answer.join('\n'):''} onChange={event=>setDraft({...draft,answer:event.target.value.split('\n').map(value=>value.trim()).filter(Boolean)})}/><small className="field-help">Enter one accepted list item per line.</small></label>}
         {draft.type==='anagram'&&<label>Word or phrase to scramble<input value={String(draft.answer||'')} onChange={event=>setDraft({...draft,answer:event.target.value})} placeholder="e.g. Platypus"/><small className="field-help">The same jumble is shown to every player. Minimum timer: 10 seconds.</small></label>}
-        {draft.type==='text'&&<label>Accepted answers (optional)<textarea value={Array.isArray(draft.answer)?draft.answer.join('\n'):String(draft.answer||'')} onChange={event=>setDraft({...draft,answer:event.target.value.split(/\r?\n|,/).map(value=>value.trim()).filter(Boolean)})} placeholder={'Edinburgh\nEdinburgh City'}/><small className="field-help">Enter one accepted answer per line. Matches score automatically; every other response is sent to the Host for verification. Leave blank when every response should be Host judged.</small></label>}
+        {draft.type==='text'&&<><label>Correct answer to display<input value={Array.isArray(draft.answer)?draft.answer[0] || '':String(draft.answer || '')} onChange={event=>setDraft({...draft,answer:[event.target.value,...(Array.isArray(draft.answer)?draft.answer.slice(1):[])]})} placeholder="e.g. New York"/><small className="field-help">This is the only correct answer shown to players at reveal. Leave both fields blank to mark every response yourself.</small></label><label>Accepted variants (private)<textarea value={Array.isArray(draft.answer)?draft.answer.slice(1).join('\n'):''} onChange={event=>setDraft({...draft,answer:[Array.isArray(draft.answer)?draft.answer[0] || '':String(draft.answer || ''),...event.target.value.split('\n')]})} placeholder={'NYC\nNew York City'}/><small className="field-help">One variant per line. These also score automatically, but are never sent to players. Other responses go to the Host for verification.</small></label></>}
+
         {['photo-reveal','photo-zoom'].includes(draft.type)&&<label>Correct answer<input value={String(draft.answer||'')} onChange={event=>setDraft({...draft,answer:event.target.value})} placeholder="Answer players should type"/></label>}
+        <div className="media-editor"><div className="media-editor-head"><div><strong>Answer image (optional)</strong><span>Shown with the answer text when you reveal. Leave blank to keep the question image.</span></div>{draft.answerImageUrl&&<button onClick={()=>setDraft({...draft,answerImageUrl:undefined,answerImageAlt:undefined})}><Trash2 size={15}/> Remove answer image</button>}</div><label>Answer image URL<input value={draft.answerImageUrl?.startsWith('data:') ? '' : draft.answerImageUrl || ''} placeholder="https://…" onChange={event=>setDraft({...draft,answerImageUrl:event.target.value.trim()})}/></label><label className="image-upload"><ImagePlus size={18}/>{imageBusy?'Preparing image…':'Upload and compress answer image'}<input type="file" accept="image/*" disabled={imageBusy} onChange={event=>void chooseImage(event.target.files?.[0],true)}/></label>{draft.answerImageUrl&&<div className="media-preview"><img src={draft.answerImageUrl} alt={draft.answerImageAlt || 'Answer preview'}/></div>}<label>Answer image description<input value={draft.answerImageAlt || ''} onChange={event=>setDraft({...draft,answerImageAlt:event.target.value})} placeholder="Describe the revealed image for accessibility"/></label><small className="field-help">The answer image and its description stay private until reveal. Uploads use the same compression and quiz size limit as question images.</small></div>
         <label>Answer explanation (optional)<textarea value={draft.explanation || ''} onChange={event=>setDraft({...draft,explanation:event.target.value})} placeholder="Shown after the answer is revealed."/></label>
         {validation&&<div className="error">{validation}</div>}
         <div className="form-two"><label>Maximum points<input type="number" value={draft.points} onChange={event=>setDraft({...draft,points:Number(event.target.value)})}/></label><label>Timer (seconds)<input type="number" value={draft.duration || 30} onChange={event=>setDraft({...draft,duration:Number(event.target.value)})}/></label></div>
@@ -690,7 +700,7 @@ function Editor() {
         <div className="editor-note"><Trophy size={18}/><span><strong>{scoringSummary(draft)}</strong><br/>{questionInstruction(draft)}</span></div>
         <div className="editor-note"><CircleHelp size={18}/> A round can contain any number and mix of question types. XP Studio shows round scores after the final consecutive question in that round, then carries those points into the overall leaderboard.</div>
         <div className="editor-order-actions"><Button variant="secondary" onClick={duplicate}><Plus size={16}/> Duplicate</Button><Button variant="secondary" disabled={selected===0} onClick={()=>move(-1)}>Move up</Button><Button variant="secondary" disabled={selected===game.questions.length-1} onClick={()=>move(1)}>Move down</Button><Button variant="danger" disabled={game.questions.length<=1} onClick={deleteQuestion}><Trash2 size={15}/> Delete</Button></div>
-        <div className="form-actions editor-save-bar"><Button onClick={()=>void save()} disabled={saving}>{saving?<>Saving…</>:saved&&!isDirty?<><Check size={17}/> Saved</>:<>Save question <ArrowRight size={17}/></>}</Button><Link className="text-link" to="/host">Go to Host <ArrowRight size={16}/></Link></div>
+        <div className="form-actions editor-save-bar"><Button onClick={()=>void save()} disabled={saving || imageBusy}>{saving?<>Saving…</>:saved&&!isDirty?<><Check size={17}/> Saved</>:<>Save question <ArrowRight size={17}/></>}</Button><Link className="text-link" to="/host">Go to Host <ArrowRight size={16}/></Link></div>
       </div>
     </div>
   </main></Shell>
@@ -945,14 +955,14 @@ function MainScreen({ previewGame }: { previewGame?: Game } = {}) {
       observer.disconnect()
       window.removeEventListener('resize', fitSlide)
     }
-  }, [game.phase, game.questionIndex, game.players.length, q.id, q.imageUrl, q.prompt])
+  }, [game.phase, game.questionIndex, game.players.length, q.id, q.imageUrl, q.answerImageUrl, q.prompt])
   const openCode = () => {
     const clean = enteredCode.trim().toUpperCase()
     if (clean) nav(`/screen/${clean}`)
   }
   if (!code && !previewGame) return <div className="screen screen-launcher pixelplay-screen-launcher" style={{backgroundImage:`linear-gradient(90deg,#03070ee8,#07101ad6),url("${asset('themes/quiz-show/background.webp')}")`}}><div className="screen-launcher-card"><XPPlayLogo/><div className="eyebrow">MAIN SCREEN · PRESENTATION DISPLAY</div><h1>Connect the big screen</h1><p>Enter the code created by the XP Studio Host console. XP Play will then follow that live game automatically.</p><label>LIVE GAME CODE<input autoFocus maxLength={6} value={enteredCode} onChange={event=>setEnteredCode(event.target.value.toUpperCase())} onKeyDown={event=>event.key==='Enter'&&openCode()} placeholder="ABC123"/></label><Button onClick={openCode} disabled={!enteredCode.trim()}>Launch XP Play <ArrowRight size={18}/></Button><small>The game-specific Main Screen link fills this in automatically.</small><div className="screen-launcher-powered"><XPPlayCredit/></div></div></div>
   if (code && !previewGame && connectedCode !== code) return <div className="screen"><div className="screen-centre"><h1>{connectionError || 'Connecting to the live game…'}</h1></div></div>
-  return <div className={`screen theme-surface theme-${liveTheme} phase-${game.phase}`} style={themeSurfaceStyle(liveTheme)}>{connectionError&&<div className="error" role="alert">{connectionError}</div>}<div className="screen-top"><div className="screen-brand-block"><XPPlayLogo compact/><div className="screen-event"><strong>{game.title}</strong><small>{q?.round || "GET READY TO PLAY"}</small></div></div><div className="screen-code"><small>XP PLAY PORTAL</small><strong className="screen-portal">{location.host}{location.pathname}#/join</strong><span className="screen-code-value"><small>CODE</small><b>{game.code}</b></span><span className="screen-live">● LIVE</span><button className="screen-fullscreen" onClick={()=>void toggleFullscreen()} aria-label={isFullscreen?'Exit fullscreen':'Enter fullscreen'}><Maximize2 size={17}/>{isFullscreen?'Exit':'Fullscreen'}</button></div></div><div className="screen-content">{game.phase==='lobby'?<div ref={slideRef} className="screen-lobby"><span className="big-star">✦</span><div className="eyebrow">GET READY TO PLAY</div><h1>{game.title}</h1><p>Scan to open XP Play, then enter</p><div className="lobby-join"><PlayerPortalQr value={`${location.origin}${location.pathname}#/join`}/><div><small>XP PLAY PLAYER PORTAL</small><strong>{location.host}{location.pathname}#/join</strong><div className="giant-code">{game.code}</div></div></div><div className="joined-avatars">{game.players.slice(0,8).map(p=><PlayerAvatar key={p.id} player={p} packs={packs} size={64}/>)}</div><small>{game.players.length} {game.players.length===1?'player':'players'} joined</small></div>:game.phase==='round-intro'?<div ref={slideRef} className="screen-centre round-intro-screen"><span className="round-kicker">UP NEXT</span><h1>{q.round.replace(' · ','\n')}</h1><p>Get ready. The next question is coming.</p></div>:showQ?<div ref={slideRef} className={`screen-question type-${q.type} ${q.imageUrl?"has-media":""}`}><div className="screen-q-head"><span>{q.round}</span><span>QUESTION {game.questionIndex+1} / {game.questions.length}</span></div><div className="screen-type"><span><small>QUESTION TYPE</small><strong>{typeNames[q.type]}</strong></span><p><b>HOW TO ANSWER</b>{questionInstruction(q)}</p><em className="screen-scoring">{scoringSummary(q).toUpperCase()}</em></div><div className="screen-question-focus"><h1>{q.prompt}</h1><QuestionMediaStage game={game} question={q}/>{q.type==='anagram'&&game.phase!=='reveal'&&<AnagramBoard game={game} question={q}/>}</div><div className="screen-answer-area"><AnswerStage question={q} revealed={game.phase==='reveal'}/>{game.phase!=='reveal'&&['ordering','matching','categorise'].includes(q.type)&&q.items&&<div className="screen-items">{q.items.map(item=><span key={item}>{item}</span>)}</div>}</div><div className="screen-question-status"><Countdown game={game} className="screen-timer"/>{game.phase==='reveal'?<div className="screen-reveal-caption"><Sparkles size={18}/> {q.explanation || 'The correct answer is highlighted above.'}</div>:<div className="screen-footline"><span>{game.phase==='open'?'Answers open':game.phase==='closed'?'Answers closed':'Get ready to answer'}</span><span>{game.answerCount || 0} answers received</span></div>}</div></div>:['scores','round-scores','leaderboard','final'].includes(game.phase)?<MainScoreboard game={game} question={q} packs={packs} slideRef={slideRef}/>:game.phase==='podium'?<div ref={slideRef} className="screen-podium-wrap"><WinnersPodium players={game.players} packs={packs}/></div>:<div ref={slideRef} className={`screen-centre phase-scene-copy ${game.phase==='break'?'break-copy':'thanks-copy'}`}><span className="scene-symbol" aria-hidden="true">{sceneCopy.symbol}</span><span className="scene-kicker">{sceneCopy.kicker}</span><h1>{sceneCopy.title}</h1><p>{sceneCopy.screen}</p></div>}</div><div className="screen-bottom"><XPPlayCredit/><span>{phaseNames[game.phase].toUpperCase()}</span></div></div>
+  return <div className={`screen theme-surface theme-${liveTheme} phase-${game.phase}`} style={themeSurfaceStyle(liveTheme)}>{connectionError&&<div className="error" role="alert">{connectionError}</div>}<div className="screen-top"><div className="screen-brand-block"><XPPlayLogo compact/><div className="screen-event"><strong>{game.title}</strong><small>{q?.round || "GET READY TO PLAY"}</small></div></div><div className="screen-code"><small>XP PLAY PORTAL</small><strong className="screen-portal">{location.host}{location.pathname}#/join</strong><span className="screen-code-value"><small>CODE</small><b>{game.code}</b></span><span className="screen-live">● LIVE</span><button className="screen-fullscreen" onClick={()=>void toggleFullscreen()} aria-label={isFullscreen?'Exit fullscreen':'Enter fullscreen'}><Maximize2 size={17}/>{isFullscreen?'Exit':'Fullscreen'}</button></div></div><div className="screen-content">{game.phase==='lobby'?<div ref={slideRef} className="screen-lobby"><span className="big-star">✦</span><div className="eyebrow">GET READY TO PLAY</div><h1>{game.title}</h1><p>Scan to open XP Play, then enter</p><div className="lobby-join"><PlayerPortalQr value={`${location.origin}${location.pathname}#/join`}/><div><small>XP PLAY PLAYER PORTAL</small><strong>{location.host}{location.pathname}#/join</strong><div className="giant-code">{game.code}</div></div></div><div className="joined-avatars">{game.players.slice(0,8).map(p=><PlayerAvatar key={p.id} player={p} packs={packs} size={64}/>)}</div><small>{game.players.length} {game.players.length===1?'player':'players'} joined</small></div>:game.phase==='round-intro'?<div ref={slideRef} className="screen-centre round-intro-screen"><span className="round-kicker">UP NEXT</span><h1>{q.round.replace(' · ','\n')}</h1><p>Get ready. The next question is coming.</p></div>:showQ?<div ref={slideRef} className={`screen-question type-${q.type} ${presentationImage(q,game.phase).url?"has-media":""}`}><div className="screen-q-head"><span>{q.round}</span><span>QUESTION {game.questionIndex+1} / {game.questions.length}</span></div><div className="screen-type"><span><small>QUESTION TYPE</small><strong>{typeNames[q.type]}</strong></span><p><b>HOW TO ANSWER</b>{questionInstruction(q)}</p><em className="screen-scoring">{scoringSummary(q).toUpperCase()}</em></div><div className="screen-question-focus"><h1>{q.prompt}</h1><QuestionMediaStage game={game} question={q}/>{q.type==='anagram'&&game.phase!=='reveal'&&<AnagramBoard game={game} question={q}/>}</div><div className="screen-answer-area"><AnswerStage question={q} revealed={game.phase==='reveal'}/>{game.phase!=='reveal'&&['ordering','matching','categorise'].includes(q.type)&&q.items&&<div className="screen-items">{q.items.map(item=><span key={item}>{item}</span>)}</div>}</div><div className="screen-question-status"><Countdown game={game} className="screen-timer"/>{game.phase==='reveal'?<div className="screen-reveal-caption"><Sparkles size={18}/> {q.explanation || 'The correct answer is highlighted above.'}</div>:<div className="screen-footline"><span>{game.phase==='open'?'Answers open':game.phase==='closed'?'Answers closed':'Get ready to answer'}</span><span>{game.answerCount || 0} answers received</span></div>}</div></div>:['scores','round-scores','leaderboard','final'].includes(game.phase)?<MainScoreboard game={game} question={q} packs={packs} slideRef={slideRef}/>:game.phase==='podium'?<div ref={slideRef} className="screen-podium-wrap"><WinnersPodium players={game.players} packs={packs}/></div>:<div ref={slideRef} className={`screen-centre phase-scene-copy ${game.phase==='break'?'break-copy':'thanks-copy'}`}><span className="scene-symbol" aria-hidden="true">{sceneCopy.symbol}</span><span className="scene-kicker">{sceneCopy.kicker}</span><h1>{sceneCopy.title}</h1><p>{sceneCopy.screen}</p></div>}</div><div className="screen-bottom"><XPPlayCredit/><span>{phaseNames[game.phase].toUpperCase()}</span></div></div>
 }
 
 const scoreboardPreviewPlayers: Player[] = [
