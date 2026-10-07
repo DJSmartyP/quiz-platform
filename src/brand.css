@@ -202,6 +202,8 @@
 .wait-code,.player-rank{background:var(--live-panel-2);color:var(--live-b)}
 .wait-code b{color:var(--live-text)}
 .scramble,.anagram-label{color:var(--live-b)}
+.scramble{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 14px;letter-spacing:0}
+.scramble-word{display:inline-block;max-width:100%;white-space:nowrap;letter-spacing:.18em}
 .anagram-board{background:var(--live-panel);border-color:var(--live-border)}
 .anagram-letters span{background:var(--live-panel-2);color:var(--live-text);border:1px solid var(--live-b);box-shadow:none}
 .anagram-letters span.locked{background:#28432f;color:var(--live-good);border-color:var(--live-good);box-shadow:none}
@@ -254,6 +256,7 @@
 .screen-options.is-revealed>div.correct::after{content:'✦';position:absolute;right:20px;top:-8px;color:#fff7a2;font-size:35px;animation:reveal-spark 1.7s ease-in-out infinite}
 .screen-options .option-check{color:#d8ffe7;flex:none}
 .question-media{position:relative;width:min(860px,100%);height:clamp(230px,31vh,370px);flex:0 0 auto;margin:0 auto 24px;border:2px solid var(--live-border);border-radius:16px;overflow:hidden;background:#080614;box-shadow:0 18px 45px #08041166}.question-media>img{display:block;width:100%;height:100%;object-fit:contain;transition:transform .25s linear;will-change:transform}.question-media.photo-zoom>img{object-fit:contain}.photo-cover{position:absolute;inset:0;display:grid;grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(4,1fr);gap:0;background:transparent}.photo-cover i{background:linear-gradient(135deg,#4f2992,#21133e);border:0;opacity:1;transform:scale(1);transition:opacity .45s,transform .45s}.photo-cover i.gone{opacity:0;transform:scale(.72);pointer-events:none}.photo-progress{position:absolute;left:50%;bottom:9px;transform:translateX(-50%);padding:6px 12px;border-radius:999px;background:#0c071bdd;color:#fff;font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.question-media.photo-unavailable{display:grid;place-items:center;width:min(520px,100%);color:#fff;font-size:clamp(15px,2vw,22px);font-weight:800;text-align:center}.question-media>.photo-unavailable{position:absolute;inset:0;display:grid;place-items:center;padding:20px;background:#080614e8;color:#fff;text-align:center;font-weight:800}
 .reveal-stage{margin:20px 0;animation:reveal-rise .55s both}
 .reveal-kicker{display:block;color:#ffe69a;text-align:center;font-size:13px;font-weight:900;letter-spacing:3px;margin-bottom:17px}
 .reveal-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
@@ -576,16 +579,17 @@
 
 /* The scrambled word is the visual focus of an anagram question. */
 .screen-question.type-anagram .screen-question-focus>h1{max-height:clamp(130px,21vh,230px)}
-.screen-question.type-anagram .anagram-board{flex:0 1 auto;width:min(1180px,100%);min-height:clamp(170px,23vh,240px);margin:clamp(8px,1.2vh,14px) auto 0;padding:clamp(18px,2.5vh,30px);display:grid;align-content:center;gap:clamp(8px,1.2vh,14px);overflow:hidden}
+.screen-question.type-anagram .anagram-board{flex:0 0 auto;width:min(1180px,100%);min-height:clamp(170px,23vh,240px);margin:clamp(8px,1.2vh,14px) auto 0;padding:clamp(18px,2.5vh,30px);display:grid;align-content:center;gap:clamp(8px,1.2vh,14px);overflow:visible}
 .screen-question.type-anagram .anagram-letters{gap:clamp(8px,1vw,14px);margin:0;align-items:center}
-.screen-question.type-anagram .anagram-letters span{width:clamp(50px,4.7vw,78px);height:clamp(60px,5.7vw,92px);font-size:clamp(32px,3.6vw,56px);border-width:2px;border-radius:10px}
+.screen-question.type-anagram .anagram-word{display:flex;flex:0 0 auto;align-items:center;gap:var(--anagram-letter-gap,8px);white-space:nowrap;max-width:100%}
+.screen-question.type-anagram .anagram-letters span{flex:0 0 auto;width:var(--anagram-tile-size);height:calc(var(--anagram-tile-size) * 1.18);font-size:calc(var(--anagram-tile-size) * .72);border-width:2px;border-radius:10px}
 .screen-question.type-anagram .anagram-letters span.space{width:clamp(18px,2vw,32px)}
 .screen-question.type-anagram .anagram-label{font-size:clamp(10px,1vw,15px)}
 .screen-question.type-anagram .anagram-progress{font-size:clamp(10px,.9vw,14px)}
 @media(max-height:820px) and (min-width:751px){
   .screen-question.type-anagram .screen-question-focus>h1{max-height:120px}
   .screen-question.type-anagram .anagram-board{min-height:145px;padding:14px 20px}
-  .screen-question.type-anagram .anagram-letters span{width:clamp(44px,4vw,64px);height:clamp(52px,4.8vw,74px);font-size:clamp(28px,3vw,44px)}
+  .screen-question.type-anagram .anagram-letters span{width:var(--anagram-tile-size);height:calc(var(--anagram-tile-size) * 1.18);font-size:calc(var(--anagram-tile-size) * .72)}
 }
 
 /* Keep intrinsic prompt height visible; the slide fitter handles crowded screens.

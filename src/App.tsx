@@ -325,25 +325,47 @@ function Countdown({ game, className = '' }: { game: Game; className?: string })
   const percent = Math.min(100, Math.max(0, remaining / duration * 100))
   return <div className={`countdown ${className} ${remaining <= 5 ? 'urgent' : ''}`} role="timer" aria-label={`${remaining} seconds remaining`}><Clock3 size={20}/><strong>{remaining}</strong><span>seconds left</span><div className="countdown-track"><i style={{width:`${percent}%`}}/></div></div>
 }
+function AnagramTiles({ text, locked = new Set<number>() }: { text: string; locked?: Set<number> }) {
+  const container = useRef<HTMLDivElement>(null)
+  const [availableWidth, setAvailableWidth] = useState(0)
+  const words: { char: string; index: number }[][] = []
+  const characters = [...text]
+  for (const [index, char] of characters.entries()) {
+    if (/\s/.test(char)) continue
+    if (index === 0 || /\s/.test(characters[index - 1])) words.push([])
+    words.at(-1)?.push({ char, index })
+  }
+  const longest = Math.max(1, ...words.map(word => word.length))
+  useEffect(() => {
+    if (!container.current) return
+    const observer = new ResizeObserver(entries => setAvailableWidth(entries[0].contentRect.width))
+    observer.observe(container.current)
+    return () => observer.disconnect()
+  }, [])
+  const letterGap = availableWidth ? Math.min(8, Math.max(1, availableWidth / (longest * 7))) : 8
+  const tileSize = availableWidth ? Math.max(1, Math.min(78, Math.floor((availableWidth - letterGap * (longest - 1)) / longest))) : 46
+  return <div ref={container} className="anagram-letters" style={{ '--anagram-tile-size': `${tileSize}px`, '--anagram-letter-gap': `${letterGap}px` } as React.CSSProperties} aria-hidden="true">{words.map((word, wordIndex) => <div className="anagram-word" key={wordIndex}>{word.map(({ char, index }) => <span key={index} className={locked.has(index) ? 'locked' : ''}>{char}</span>)}</div>)}</div>
+}
 function AnagramBoard({ game, question }: {game: Game; question: Question}) {
   const now = useClock(game.phase === 'open')
   const answer = String(question.answer || question.anagramSolution || '')
   const scramble = question.scramble || answer.toUpperCase()
-  if (!answer) return <div className="anagram-board"><div className="anagram-label">THE JUMBLED WORD</div><div className="anagram-letters">{[...scramble].map((char,index)=><span key={index}>{char === ' ' ? '\u00a0' : char}</span>)}</div></div>
+  if (!answer) return <div className="anagram-board" aria-label={`Jumbled letters: ${scramble}`}><div className="anagram-label">THE JUMBLED WORD</div><AnagramTiles text={scramble}/></div>
   const elapsed = game.phase === 'open' || game.phase === 'closed'
     ? Math.max(0, ((game.phase === 'closed' ? game.closedAt || now : now) - (game.openedAt || now)) / 1000)
     : 0
   const display = anagramDisplay(answer, scramble, elapsed, question.duration || 30)
   const locked = new Set(display.lockedPositions)
   const waiting = game.phase === 'open' && elapsed < 5
-  return <div className="anagram-board" aria-label={`Jumbled letters: ${display.text}`}><div className="anagram-label">{waiting ? 'SOLVING STARTS IN A MOMENT' : game.phase === 'open' ? 'LETTERS ARE FALLING INTO PLACE' : game.phase === 'closed' ? 'TIME IS UP' : 'THE JUMBLED WORD'}</div><div className="anagram-letters">{[...display.text].map((char, index) => <span key={index} className={`${char === ' ' ? 'space' : ''} ${locked.has(index) ? 'locked' : ''}`}>{char === ' ' ? '\u00a0' : char}</span>)}</div><div className="anagram-progress">{waiting ? 'The jumble stays still for the first 5 seconds' : `${display.lockedCount} of ${display.positions.length} letters locked`}</div></div>
+  return <div className="anagram-board" aria-label={`Jumbled letters: ${display.text}`}><div className="anagram-label">{waiting ? 'SOLVING STARTS IN A MOMENT' : game.phase === 'open' ? 'LETTERS ARE FALLING INTO PLACE' : game.phase === 'closed' ? 'TIME IS UP' : 'THE JUMBLED WORD'}</div><AnagramTiles text={display.text} locked={locked}/><div className="anagram-progress">{waiting ? 'The jumble stays still for the first 5 seconds' : `${display.lockedCount} of ${display.positions.length} letters locked`}</div></div>
 }
 
 function QuestionMediaStage({ game, question }: { game: Game; question: Question }) {
   const now = useClock(Boolean(question.imageUrl) && game.phase === 'open')
   const [imageRatio, setImageRatio] = useState(1)
+  const [failedImage, setFailedImage] = useState('')
   const image = presentationImage(question, game.phase)
-  if (!image.url) return null
+  if (!image.url) return ['photo-reveal', 'photo-zoom'].includes(question.type) ? <div className="question-media photo-unavailable" role="status">Preparing picture…</div> : null
   const at = game.phase === 'closed' ? game.closedAt || now : now
   const elapsed = ['open', 'closed'].includes(game.phase) ? Math.max(0, at - (game.openedAt || at)) : 0
   const progress = game.phase === 'reveal' ? 1 : Math.min(1, elapsed / ((question.duration || 30) * 1000))
@@ -352,8 +374,10 @@ function QuestionMediaStage({ game, question }: { game: Game; question: Question
   const visibleTiles = game.phase === 'reveal' ? 24 : Math.floor(progress * 24)
   const scale = game.phase === 'reveal' ? 1 : 3.4 - progress * 2.4
   const revealedTiles = new Set(photoTileOrder(question.id).slice(0, visibleTiles))
-  return <div className={`question-media ${isReveal ? 'photo-reveal' : ''} ${isZoom ? 'photo-zoom' : ''}`} style={{'--question-image-ratio': imageRatio} as React.CSSProperties}>
-    <img src={image.url} alt={image.alt} onLoad={event=>setImageRatio(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight || 1)} style={isZoom ? { transform: `scale(${scale})` } : undefined}/>
+  const mediaStyle = { '--question-image-ratio': imageRatio, ...(isZoom ? { width: 'min(100%, clamp(190px, 36vh, 420px))', height: 'clamp(190px, 36vh, 420px)', maxHeight: 'none', aspectRatio: '1', flex: '0 0 auto' } : {}) } as React.CSSProperties
+  return <div className={`question-media ${isReveal ? 'photo-reveal' : ''} ${isZoom ? 'photo-zoom' : ''}`} style={mediaStyle}>
+    <img src={image.url} alt={image.alt} onLoad={event=>{setFailedImage('');setImageRatio(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight || 1)}} onError={()=>setFailedImage(image.url || '')} style={isZoom ? { transform: `scale(${scale})` } : undefined}/>
+    {failedImage === image.url && <div className="photo-unavailable" role="alert">Picture could not load. Check the image in XP Studio.</div>}
     {isReveal && <div className="photo-cover" aria-hidden="true">{Array.from({ length: 24 }, (_, index) => <i key={index} className={revealedTiles.has(index) ? 'gone' : ''}/>)}</div>}
     {(isReveal || isZoom) && game.phase !== 'reveal' && <span className="photo-progress">{isReveal ? `${visibleTiles} / 24 panels revealed` : 'The picture is zooming out'}</span>}
   </div>
@@ -1242,7 +1266,7 @@ function AnswerInput({q,value,setValue,choice}:{q:Question;value:unknown;setValu
   if(q.type==='list') return <div className="list-input">{Array.from({length:Math.max(1,Array.isArray(q.answer)?q.answer.length:3)},(_,i)=><input key={i} placeholder={`Answer ${i+1}`} value={(value as string[])[i]||''} onChange={e=>{const next=[...(value as string[])];next[i]=e.target.value;setValue(next)}}/>)}</div>
   if(q.type==='number'||q.type==='closest') return <input className="answer-text" type="number" placeholder="Your number" value={value as string} onChange={e=>setValue(e.target.value)}/>
   if(q.type==='text') return <textarea className="answer-text" placeholder="Type your answer…" value={value as string} onChange={e=>setValue(e.target.value)}/>
-  return <div>{q.type==='anagram'&&<div className="scramble">{[...(q.scramble||String(q.answer||'').toUpperCase())].join(' ')}</div>}<input className="answer-text" placeholder={q.type==='anagram'?'Unscramble it…':'Type your answer…'} value={value as string} onChange={e=>setValue(e.target.value)}/></div>
+  return <div>{q.type==='anagram'&&<div className="scramble">{(q.scramble||String(q.answer||'').toUpperCase()).split(/\s+/).filter(Boolean).map((word,index)=><span className="scramble-word" style={{fontSize:`clamp(9px,${Math.min(3.5, 74 / word.length)}vw,18px)`}} key={index}>{word}</span>)}</div>}<input className="answer-text" placeholder={q.type==='anagram'?'Unscramble it…':'Type your answer…'} value={value as string} onChange={e=>setValue(e.target.value)}/></div>
 }
 function Admin() { return <Shell active="Admin"><AdminDashboard/></Shell> }
 function App() { return <HashRouter><Routes><Route path="/" element={<Home/>}/><Route path="/organiser" element={<HostGate><Organiser/></HostGate>}/><Route path="/editor" element={<HostGate><Editor/></HostGate>}/><Route path="/host" element={<HostGate><Host/></HostGate>}/><Route path="/screen" element={<MainScreen/>}/><Route path="/screen/:code" element={<MainScreen/>}/><Route path="/layout-preview/:questionType" element={<QuestionLayoutPreview/>}/><Route path="/scoreboard-preview/:count" element={<ScoreboardLayoutPreview/>}/><Route path="/player-wait-preview" element={<PlayerWaitPreview/>}/><Route path="/join" element={<Join/>}/><Route path="/join/:code" element={<Join/>}/><Route path="/admin" element={<HostGate adminOnly><Admin/></HostGate>}/><Route path="*" element={<Home/>}/></Routes></HashRouter> }

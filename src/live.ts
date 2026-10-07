@@ -719,7 +719,22 @@ export function followLiveScreen(code: string, onError: (message: string) => voi
   let media: { questionId: string; imageUrl?: string; answerImageUrl?: string } | null = null
   let mediaQuestionId = ''
   let stopMedia: Unsubscribe | null = null
+  let mediaRetry: ReturnType<typeof setTimeout> | null = null
+  let disposed = false
   const render = () => { if (publicState) receiveLiveGame(withRoster(withPublishedMedia(publicState, media), roster), 'screen') }
+  const watchMedia = (questionId: string) => {
+    if (disposed || mediaQuestionId !== questionId) return
+    stopMedia = onSnapshot(doc(screenDb, 'liveGames', upper, 'media', questionId), image => {
+      media = image.exists() ? image.data() as typeof media : null
+      onError('')
+      render()
+    }, error => {
+      stopMedia = null
+      if (disposed || mediaQuestionId !== questionId) return
+      onError(`Image sync error: ${error.message}. Retrying…`)
+      mediaRetry = setTimeout(() => { mediaRetry = null; watchMedia(questionId) }, 3000)
+    })
+  }
   const stopGame = onSnapshot(doc(screenDb, 'liveGames', upper), snap => {
     if (!snap.exists()) { onError('No live game exists with that code.'); return }
     publicState = timedGame(snap.data() as PublicDocument)
@@ -728,13 +743,12 @@ export function followLiveScreen(code: string, onError: (message: string) => voi
     const nextMediaId = needsMedia ? question.id : ''
     if (nextMediaId !== mediaQuestionId) {
       stopMedia?.()
+      if (mediaRetry) clearTimeout(mediaRetry)
+      mediaRetry = null
       stopMedia = null
       media = null
       mediaQuestionId = nextMediaId
-      if (nextMediaId) stopMedia = onSnapshot(doc(screenDb, 'liveGames', upper, 'media', nextMediaId), image => {
-        media = image.exists() ? image.data() as typeof media : null
-        render()
-      }, error => onError(`Image sync error: ${error.message}`))
+      if (nextMediaId) watchMedia(nextMediaId)
     }
     render()
     onConnected()
@@ -743,7 +757,7 @@ export function followLiveScreen(code: string, onError: (message: string) => voi
     roster = result.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0, activeFromQuestionIndex: item.data().activeFromQuestionIndex, waitForQuestionAnnouncement: item.data().waitForQuestionAnnouncement }))
     render()
   }, error => onError(error.message))
-  return () => { stopGame(); stopRoster(); stopMedia?.() }
+  return () => { disposed = true; stopGame(); stopRoster(); stopMedia?.(); if (mediaRetry) clearTimeout(mediaRetry) }
 }
 
 export async function joinLiveGame(code: string, name: string, avatarId: string, onReady: (questionId: string) => void, onResult: (result: OwnResult | null) => void, onError: (message: string) => void, onConnection?: (connected: boolean) => void) {
