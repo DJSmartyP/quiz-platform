@@ -187,10 +187,10 @@ export function duplicateQuiz(id: string) {
   save(gameFromQuiz(quiz))
   return quiz
 }
-export function importQuiz(title: string, questions: Question[], theme: QuizTheme = 'quiz-show', roundThemes: Record<string, QuizTheme> = {}, introTheme: QuizTheme = theme, exitTheme: QuizTheme = theme) {
+export function importQuiz(title: string, questions: Question[], theme: QuizTheme = 'quiz-show', roundThemes: Record<string, QuizTheme> = {}, introTheme: QuizTheme = theme, exitTheme: QuizTheme = theme, quizId = crypto.randomUUID()) {
   if (liveRole) throw new Error('Leave the live session before importing a quiz.')
   const quiz: QuizTemplate = {
-    id: crypto.randomUUID(),
+    id: quizId,
     title,
     theme,
     introTheme,

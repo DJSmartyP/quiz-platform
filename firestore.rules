@@ -55,6 +55,20 @@ service cloud.firestore {
         allow delete: if activeHost(uid) && resource.data.ownerUid == uid;
       }
 
+      match /quizMedia/{mediaId} {
+        allow get, list: if activeHost(uid) || isAdmin();
+        allow create: if activeHost(uid) &&
+          request.resource.data.keys().hasOnly(['ownerUid', 'quizId', 'dataUrl', 'createdAtMs']) &&
+          request.resource.data.ownerUid == uid &&
+          request.resource.data.quizId is string &&
+          request.resource.data.dataUrl is string &&
+          request.resource.data.dataUrl.matches('^data:image/(webp|png|jpeg);base64,.*$') &&
+          request.resource.data.dataUrl.size() <= 150000 &&
+          request.resource.data.createdAtMs is int;
+        allow update: if false;
+        allow delete: if activeHost(uid) || isAdmin();
+      }
+
       match /quizDeletions/{quizId} {
         allow get, list: if activeHost(uid);
         allow create, update: if activeHost(uid) &&
@@ -126,6 +140,21 @@ service cloud.firestore {
         allow update: if (isHost(code) || isAdmin()) && documentId == 'engine' &&
           request.resource.data.hostUid == resource.data.hostUid &&
           request.resource.data.stateVersion == resource.data.stateVersion + 1;
+        allow delete: if isHost(code) || isAdmin();
+      }
+
+      match /media/{questionId} {
+        allow get: if exists(/databases/$(database)/documents/liveGames/$(code)) &&
+          session(code).data.game.questions[session(code).data.game.questionIndex].id == questionId &&
+          session(code).data.game.phase in ['question', 'open', 'closed', 'reveal'];
+        allow list: if isHost(code) || isAdmin();
+        allow create, update: if isHost(code) &&
+          request.resource.data.keys().hasOnly(['questionId', 'imageUrl', 'answerImageUrl']) &&
+          request.resource.data.questionId == questionId &&
+          (!request.resource.data.keys().hasAny(['imageUrl']) ||
+            (request.resource.data.imageUrl is string && request.resource.data.imageUrl.size() <= 150000)) &&
+          (!request.resource.data.keys().hasAny(['answerImageUrl']) ||
+            (request.resource.data.answerImageUrl is string && request.resource.data.answerImageUrl.size() <= 150000));
         allow delete: if isHost(code) || isAdmin();
       }
 

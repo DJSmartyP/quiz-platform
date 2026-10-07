@@ -486,6 +486,8 @@
 .editor-round-group-head button{display:grid;flex:0 0 30px;place-items:center;height:30px;border:1px solid var(--qf-border);border-radius:5px;background:#202d3e;color:var(--qf-cyan);cursor:pointer}
 .editor-round-group-head button:hover{border-color:var(--qf-cyan)}
 .editor-round-group .question-row{padding-left:20px}
+.editor-media-usage{display:block;margin-top:8px;color:var(--qf-muted);font-size:11px}
+.media-loading{display:grid;place-items:center;min-height:100px;padding:12px;color:var(--qf-muted);font-size:11px;text-align:center}
 .scene-symbol{display:grid;place-items:center;width:88px;height:88px;margin:0 auto 19px;border:4px solid var(--theme-accent);background:#07101acc;box-shadow:7px 7px 0 #02050a,0 0 25px color-mix(in srgb,var(--theme-accent),transparent 40%);font:400 37px 'Press Start 2P',monospace;color:var(--theme-accent)}
 .theme-surface.phase-closed-game{background-image:linear-gradient(#07101b18,#07101b48),var(--theme-thanks)!important}
 .theme-surface.screen.phase-closed-game::before{background:linear-gradient(90deg,#03060a35,transparent 28% 72%,#03060a35),linear-gradient(#03060a15,#03060a3d)}

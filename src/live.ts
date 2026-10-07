@@ -1,12 +1,13 @@
 import { initializeApp } from 'firebase/app'
 import { browserLocalPersistence, getAuth, GoogleAuthProvider, setPersistence, signInAnonymously, signInWithPopup, signOut, type Auth, type User } from 'firebase/auth'
-import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, limit, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch, type Unsubscribe } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, limit, onSnapshot, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch, type Transaction, type Unsubscribe } from 'firebase/firestore'
 import { advanceGame, breakGame, extendAnswerTime, resumeGame, setLateJoining } from './gameEngine'
 import { currentQuestion, isLastQuestionInRound, scrambleWord, type Game, type Player, type Response } from './model'
 import { publicGame } from './publicGame'
 import { resultForGrade, type OwnResult } from './reveal'
 import { normaliseQuestion, roundScore } from './scoring'
 import { getGame, receiveLiveGame, receiveOwnLiveResponse, type QuizTemplate } from './store'
+import { parseQuizMediaRef, quizMediaRef, withPublishedMedia } from './quizMedia'
 
 // Firebase web configuration is public; Firestore rules enforce access.
 const config = {
@@ -338,6 +339,32 @@ export async function deleteQuizTemplateCloud(id: string) {
   // deliberately deleted quiz on the next page load.
   if (isApprovedAdmin(hostAuth().currentUser)) batch.delete(doc(hostDb, 'quizTemplates', id))
   await batch.commit()
+  try { await cleanupUnusedQuizMedia(uid, id) }
+  catch (error) { console.warn('Quiz deleted; unused media cleanup will retry on a later deletion.', error) }
+}
+
+/** Remove media no longer used by any quiz, allowing time for an in-progress edit. */
+async function cleanupUnusedQuizMedia(uid: string, deletedQuizId: string) {
+  const [quizzes, media, sessions] = await Promise.all([
+    getDocs(collection(hostDb, 'users', uid, 'quizzes')),
+    getDocs(collection(hostDb, 'users', uid, 'quizMedia')),
+    getDocs(collection(hostDb, 'users', uid, 'sessions')),
+  ])
+  if (sessions.docs.some(item => item.data().status === 'active')) return
+  const referenced = new Set<string>()
+  for (const item of quizzes.docs) {
+    const questions = (item.data().questions || []) as Game['questions']
+    for (const question of questions) for (const value of [question.imageUrl, question.answerImageUrl]) {
+      const parsed = parseQuizMediaRef(value)
+      if (parsed?.ownerUid === uid) referenced.add(parsed.mediaId)
+    }
+  }
+  const unused = media.docs.filter(item => !referenced.has(item.id) && (item.data().quizId === deletedQuizId || Number(item.data().createdAtMs || 0) < Date.now() - 60 * 60 * 1000))
+  for (let index = 0; index < unused.length; index += 200) {
+    const batch = writeBatch(hostDb)
+    unused.slice(index, index + 200).forEach(item => batch.delete(item.ref))
+    await batch.commit()
+  }
 }
 
 export async function listLiveSessions(): Promise<LiveSessionRecord[]> {
@@ -347,7 +374,7 @@ export async function listLiveSessions(): Promise<LiveSessionRecord[]> {
     .sort((a, b) => (b.deleteAfterMs || Number.MAX_SAFE_INTEGER) - (a.deleteAfterMs || Number.MAX_SAFE_INTEGER))
 }
 
-async function deleteSessionCollection(code: string, name: 'private' | 'players' | 'responses' | 'results') {
+async function deleteSessionCollection(code: string, name: 'private' | 'players' | 'responses' | 'results' | 'media') {
   while (true) {
     const snapshot = await getDocs(query(collection(hostDb, 'liveGames', code, name), limit(200)))
     if (snapshot.empty) return
@@ -365,7 +392,7 @@ export async function deleteLiveSession(code: string) {
   const current = await getDoc(publicRef)
   const ownerUid = current.exists() ? String(current.data().hostUid) : uid
   if (current.exists() && ownerUid !== uid && !isApprovedAdmin(hostAuth().currentUser)) throw new Error('Only the session owner can delete this live game.')
-  for (const name of ['responses', 'results', 'players', 'private'] as const) await deleteSessionCollection(upper, name)
+  for (const name of ['responses', 'results', 'players', 'media', 'private'] as const) await deleteSessionCollection(upper, name)
   if (current.exists()) await deleteDoc(publicRef)
   await deleteDoc(doc(hostDb, 'users', ownerUid, 'sessions', upper)).catch(() => undefined)
   if (localStorage.getItem(hostCodeKey(uid)) === upper) localStorage.removeItem(hostCodeKey(uid))
@@ -407,7 +434,7 @@ export async function deleteAdminSession(code: string, ownerUid: string) {
   const upper = code.trim().toUpperCase()
   const current = await getDoc(doc(hostDb, 'liveGames', upper))
   if (current.exists() && current.data().hostUid !== ownerUid) throw new Error('Session ownership changed. Refresh and try again.')
-  for (const name of ['responses', 'results', 'players', 'private'] as const) await deleteSessionCollection(upper, name)
+  for (const name of ['responses', 'results', 'players', 'media', 'private'] as const) await deleteSessionCollection(upper, name)
   if (current.exists()) await deleteDoc(current.ref)
   await deleteDoc(doc(hostDb, 'users', ownerUid, 'sessions', upper)).catch(() => undefined)
 }
@@ -428,6 +455,46 @@ async function playerUid() {
 }
 
 function serialise<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T }
+
+const quizMediaCache = new Map<string, string>()
+
+/** Keep uploaded images outside the quiz and live-game documents. */
+export async function uploadQuizMedia(quizId: string, dataUrl: string) {
+  if (!/^data:image\/(webp|png|jpeg);base64,/.test(dataUrl) || dataUrl.length > 150_000) throw new Error('This image is too large. Choose a smaller image or crop.')
+  const uid = await hostUid(false)
+  const mediaId = crypto.randomUUID()
+  const ref = quizMediaRef(uid, mediaId)
+  await setDoc(doc(hostDb, 'users', uid, 'quizMedia', mediaId), { ownerUid: uid, quizId, dataUrl, createdAtMs: Date.now() })
+  quizMediaCache.set(ref, dataUrl)
+  return ref
+}
+
+export async function readQuizMedia(ref: string) {
+  const parsed = parseQuizMediaRef(ref)
+  if (!parsed) return ref
+  const cached = quizMediaCache.get(ref)
+  if (cached) return cached
+  await hostUid(false)
+  const snapshot = await getDoc(doc(hostDb, 'users', parsed.ownerUid, 'quizMedia', parsed.mediaId))
+  if (!snapshot.exists()) throw new Error('A quiz image is missing. Replace it in the editor.')
+  const dataUrl = String(snapshot.data().dataUrl || '')
+  quizMediaCache.set(ref, dataUrl)
+  return dataUrl
+}
+
+async function liveMediaForQuestion(source: Game, tx: Transaction) {
+  const question = currentQuestion(source)
+  const media: { questionId: string; imageUrl?: string; answerImageUrl?: string } = { questionId: question.id }
+  for (const key of ['imageUrl', 'answerImageUrl'] as const) {
+    if (key === 'answerImageUrl' && source.phase !== 'reveal') continue
+    const parsed = parseQuizMediaRef(question[key])
+    if (!parsed) continue
+    const snapshot = await tx.get(doc(hostDb, 'users', parsed.ownerUid, 'quizMedia', parsed.mediaId))
+    if (!snapshot.exists()) throw new Error('A quiz image is missing. Replace it in the editor before continuing.')
+    media[key] = String(snapshot.data().dataUrl || '')
+  }
+  return media.imageUrl || media.answerImageUrl ? media : null
+}
 
 function withRoster(game: Game, roster: Player[]): Game {
   const scores = new Map(game.players.map(player => [player.id, player.score]))
@@ -612,6 +679,7 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
     if (next === base) return
     next.responses = [] // submissions stay in their own protected records
     const answerCount = next.questionIndex === base.questionIndex ? Number(published.answerCount || 0) : 0
+    const releasedMedia = ['question', 'reveal'].includes(next.phase) ? await liveMediaForQuestion(next, tx) : null
     const data = { stateVersion: next.stateVersion, answerCount, game: serialise(publicGame(next)) }
     const ending = next.phase === 'closed-game' && base.phase !== 'closed-game'
     const deleteAfterMs = Date.now() + sessionRetentionMs
@@ -621,6 +689,7 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
       ...(next.phase === 'open' && base.phase !== 'open' ? { openedAtServer: serverTimestamp() } : {}),
       ...(ending ? { endedAt: serverTimestamp(), deleteAfterMs } : {}),
     })
+    if (releasedMedia) tx.set(doc(hostDb, 'liveGames', code, 'media', releasedMedia.questionId), releasedMedia)
     if (ending) {
       tx.set(sessionRef, { code, ownerUid: uid, title: next.title, status: 'ended', endedAt: serverTimestamp(), deleteAfterMs }, { merge: true })
     }
@@ -647,10 +716,26 @@ export function followLiveScreen(code: string, onError: (message: string) => voi
   const upper = code.toUpperCase()
   let publicState: Game | null = null
   let roster: Player[] = []
-  const render = () => { if (publicState) receiveLiveGame(withRoster(publicState, roster), 'screen') }
+  let media: { questionId: string; imageUrl?: string; answerImageUrl?: string } | null = null
+  let mediaQuestionId = ''
+  let stopMedia: Unsubscribe | null = null
+  const render = () => { if (publicState) receiveLiveGame(withRoster(withPublishedMedia(publicState, media), roster), 'screen') }
   const stopGame = onSnapshot(doc(screenDb, 'liveGames', upper), snap => {
     if (!snap.exists()) { onError('No live game exists with that code.'); return }
     publicState = timedGame(snap.data() as PublicDocument)
+    const question = publicState.questions[publicState.questionIndex]
+    const needsMedia = ['question', 'open', 'closed', 'reveal'].includes(publicState.phase) && Boolean(parseQuizMediaRef(question?.imageUrl) || parseQuizMediaRef(question?.answerImageUrl))
+    const nextMediaId = needsMedia ? question.id : ''
+    if (nextMediaId !== mediaQuestionId) {
+      stopMedia?.()
+      stopMedia = null
+      media = null
+      mediaQuestionId = nextMediaId
+      if (nextMediaId) stopMedia = onSnapshot(doc(screenDb, 'liveGames', upper, 'media', nextMediaId), image => {
+        media = image.exists() ? image.data() as typeof media : null
+        render()
+      }, error => onError(`Image sync error: ${error.message}`))
+    }
     render()
     onConnected()
   }, error => onError(error.message))
@@ -658,7 +743,7 @@ export function followLiveScreen(code: string, onError: (message: string) => voi
     roster = result.docs.map(item => ({ id: item.id, name: item.data().name, avatarId: item.data().avatarId, score: 0, activeFromQuestionIndex: item.data().activeFromQuestionIndex, waitForQuestionAnnouncement: item.data().waitForQuestionAnnouncement }))
     render()
   }, error => onError(error.message))
-  return () => { stopGame(); stopRoster() }
+  return () => { stopGame(); stopRoster(); stopMedia?.() }
 }
 
 export async function joinLiveGame(code: string, name: string, avatarId: string, onReady: (questionId: string) => void, onResult: (result: OwnResult | null) => void, onError: (message: string) => void, onConnection?: (connected: boolean) => void) {

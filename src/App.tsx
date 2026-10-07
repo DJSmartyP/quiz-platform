@@ -3,12 +3,13 @@ import { HashRouter, Link, NavLink, Route, Routes, useNavigate, useParams, useSe
 import { ArrowRight, Check, CircleHelp, Clock3, Copy, Download, Edit3, ExternalLink, Gamepad2, House, ImagePlus, LayoutDashboard, Maximize2, MonitorPlay, Play, Plus, ShieldCheck, Sparkles, Trash2, Trophy, Upload, Users, Wifi, WifiOff } from 'lucide-react'
 import { anagramDisplay, currentQuestion, currentTheme, gradeFor, isAnswerComplete, normalise, photoTileOrder, quizThemes, ranked, rankedRound, responseFor, roundPoints, sampleQuestions, scrambleWord, typeNames, type Game, type Player, type Question, type QuestionType, type QuizTheme } from './model'
 import { actionLabel, createQuiz, deleteQuiz, duplicateQuiz, expireAnswers, getActiveQuizTemplate, getLiveRole, getQuizLibrarySnapshot, importQuiz, leaveLiveRole, replaceQuizLibrary, scopeQuizWorkspace, selectQuiz, setQuizTheme, update, useGame, useQuizLibrary, type QuizTemplate } from './store'
-import { beginHostPopup, cleanupExpiredSessions, deleteLiveSession, deleteQuizTemplateCloud, followLiveScreen, hasHostSession, joinLiveGame, liveHostCommand, reconnectLivePlayer, restoreHostAccount, saveQuizTemplateCloud, signOutHost, startLiveHost, submitLiveAnswer, syncQuizLibrary, takeLiveControl, type HostAccount } from './live'
+import { beginHostPopup, cleanupExpiredSessions, deleteLiveSession, deleteQuizTemplateCloud, followLiveScreen, hasHostSession, joinLiveGame, liveHostCommand, readQuizMedia, reconnectLivePlayer, restoreHostAccount, saveQuizTemplateCloud, signOutHost, startLiveHost, submitLiveAnswer, syncQuizLibrary, takeLiveControl, uploadQuizMedia, type HostAccount } from './live'
 import { answerLabel, type OwnResult } from './reveal'
 import { presentationImage, questionMediaSize } from './questionMedia'
 import QRCode from 'qrcode'
 import AdminDashboard from './AdminDashboard'
 import { answerMatches, normaliseQuestion, questionInstruction, scoringSummary } from './scoring'
+import { parseQuizMediaRef } from './quizMedia'
 import { insertInRound, moveToRound, roundNames as getRoundNames } from './rounds'
 import './App.css'
 import './brand.css'
@@ -86,19 +87,29 @@ async function compressQuestionImage(file: File): Promise<string> {
   if (!file.type.startsWith('image/')) throw new Error('Choose a PNG, JPG, WEBP or other image file.')
   if (file.size > 12 * 1024 * 1024) throw new Error('Choose an image smaller than 12 MB.')
   const bitmap = await createImageBitmap(file)
-  const scale = Math.min(1, 1280 / bitmap.width, 720 / bitmap.height)
   const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale))
   const context = canvas.getContext('2d')
   if (!context) throw new Error('This browser could not prepare the image.')
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  bitmap.close()
-  for (const quality of [.8, .68, .56, .44]) {
-    const data = canvas.toDataURL('image/webp', quality)
-    if (data.length <= 150_000) return data
+  for (const maxWidth of [1280, 960, 720, 560]) {
+    const scale = Math.min(1, maxWidth / bitmap.width, (maxWidth * 9 / 16) / bitmap.height)
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    for (const quality of [.8, .68, .56, .44]) {
+      const data = canvas.toDataURL('image/webp', quality)
+      if (data.length <= 150_000) { bitmap.close(); return data }
+    }
   }
+  bitmap.close()
   throw new Error('This image is still too large after compression. Try a smaller crop.')
+}
+async function storeEmbeddedQuestionMedia(question: Question, quizId: string): Promise<Question> {
+  const next = { ...question }
+  for (const key of ['imageUrl', 'answerImageUrl'] as const) {
+    const image = next[key]
+    if (image?.startsWith('data:image/')) next[key] = await uploadQuizMedia(quizId, image)
+  }
+  return next
 }
 function changeQuestionType(question: Question, type: QuestionType): Question {
   const { options: _options, items: _items, categories: _categories, scramble: _scramble, tolerance: _tolerance, numberBands: _numberBands, placementMode: _placementMode, scoreMode: _scoreMode, explanation: _explanation, ...base } = question
@@ -116,7 +127,7 @@ function changeQuestionType(question: Question, type: QuestionType): Question {
 }
 function validateQuestionDraft(question: Question) {
   for (const url of [question.imageUrl, question.answerImageUrl]) {
-    if (url && (typeof url !== 'string' || (!url.startsWith('data:image/') && !/^https:\/\//i.test(url)))) return 'Image URLs must use HTTPS or an uploaded image.'
+    if (url && (typeof url !== 'string' || (!url.startsWith('data:image/') && !parseQuizMediaRef(url) && !/^https:\/\//i.test(url)))) return 'Image URLs must use HTTPS or an uploaded image.'
   }
   const duration = question.duration ?? 30
   if (!question.round.trim()) return 'Enter a round name.'
@@ -164,7 +175,7 @@ function quizPreflight(title: string, questions: Question[]) {
     if (invalid) issues.push(`Question ${index + 1}: ${invalid}`)
     if (!question.round.trim()) issues.push(`Question ${index + 1}: add a round name.`)
     if (question.options && new Set(question.options.map(option => normalise(option))).size !== question.options.length) issues.push(`Question ${index + 1}: answer options must be unique.`)
-    if (question.imageUrl && !question.imageUrl.startsWith('data:') && !/^https:\/\//i.test(question.imageUrl)) issues.push(`Question ${index + 1}: image URLs must use HTTPS.`)
+    if (question.imageUrl && !question.imageUrl.startsWith('data:') && !parseQuizMediaRef(question.imageUrl) && !/^https:\/\//i.test(question.imageUrl)) issues.push(`Question ${index + 1}: image URLs must use HTTPS.`)
   })
   const seen = new Set<string>()
   let previous = ''
@@ -176,7 +187,7 @@ function quizPreflight(title: string, questions: Question[]) {
   return [...new Set(issues)]
 }
 function readQuizPack(text: string): { title: string; theme: QuizTheme; introTheme: QuizTheme; exitTheme: QuizTheme; roundThemes: Record<string, QuizTheme>; questions: Question[] } {
-  if (text.length > 900_000) throw new Error('This quiz pack is too large to store safely.')
+  if (text.length > 20_000_000) throw new Error('This quiz pack is too large to import.')
   const parsed = JSON.parse(text) as Record<string, unknown>
   const source = ['quizforge-pack', 'xp-studio-pack'].includes(String(parsed?.format)) ? parsed.quiz as Record<string, unknown> : parsed
   if (!source || typeof source.title !== 'string' || !source.title.trim()) throw new Error('This file does not contain a quiz name.')
@@ -185,13 +196,17 @@ function readQuizPack(text: string): { title: string; theme: QuizTheme; introThe
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Question ${index + 1} is not valid.`)
     const question = structuredClone(value) as Question
     if (!questionTypes.includes(question.type) || typeof question.round !== 'string' || typeof question.prompt !== 'string') throw new Error(`Question ${index + 1} has an unsupported format.`)
+    for (const image of [question.imageUrl, question.answerImageUrl]) {
+      if (parseQuizMediaRef(image)) throw new Error(`Question ${index + 1} contains a private image reference. Export the quiz again to include its images.`)
+      if (image?.startsWith('data:') && (!/^data:image\/(webp|png|jpeg);base64,/.test(image) || image.length > 150_000)) throw new Error(`Question ${index + 1} has an oversized image. Use a smaller image.`)
+    }
     question.id = crypto.randomUUID()
     const invalid = validateQuestionDraft(question)
     if (invalid) throw new Error(`Question ${index + 1}: ${invalid}`)
     return normaliseQuestion(question)
   })
   const mediaSize = questions.reduce((total, question) => total + questionMediaSize(question), 0)
-  if (mediaSize > 650_000) throw new Error('This pack contains too much embedded image data. Use hosted image URLs for larger picture quizzes.')
+  if (mediaSize > 18_000_000) throw new Error('This pack contains too much image data.')
   const theme = quizThemeIds.includes(source.theme as QuizTheme) ? source.theme as QuizTheme : 'quiz-show'
   const introTheme = quizThemeIds.includes(source.introTheme as QuizTheme) ? source.introTheme as QuizTheme : theme
   const exitTheme = quizThemeIds.includes(source.exitTheme as QuizTheme) ? source.exitTheme as QuizTheme : theme
@@ -260,6 +275,17 @@ function Button({ children, onClick, variant = 'primary', disabled = false }: { 
 function Badge({ children, tone = 'purple' }: {children: React.ReactNode; tone?: 'purple'|'green'|'amber'|'gray'}) { return <span className={`badge ${tone}`}>{children}</span> }
 function countLabel(count: number, singular: string, plural = `${singular}s`) { return `${count} ${count === 1 ? singular : plural}` }
 function PlayerAvatar({ player, packs, size = 38, className = '' }: {player: Player; packs: Pack[]; size?: number; className?: string}) { return <img className={`player-avatar ${className}`.trim()} width={size} height={size} src={avatarSrc(player.avatarId, packs)} alt="" decoding="async"/> }
+function QuizMediaImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
+  const [loaded, setLoaded] = useState<{ src: string; url: string; failed: boolean } | null>(null)
+  useEffect(() => {
+    let active = true
+    if (!parseQuizMediaRef(src)) return
+    readQuizMedia(src).then(url => { if (active) setLoaded({ src, url, failed: false }) }).catch(() => { if (active) setLoaded({ src, url: '', failed: true }) })
+    return () => { active = false }
+  }, [src])
+  const resolved = parseQuizMediaRef(src) ? loaded?.src === src ? loaded.url : '' : src
+  return resolved ? <img className={className} src={resolved} alt={alt}/> : <span className="media-loading">{loaded?.src === src && loaded.failed ? 'Image unavailable — replace it in the editor' : 'Loading image…'}</span>
+}
 function LateJoinWait({ player, packs }: { player: Player; packs: Pack[] }) {
   return <div className="player-wait late-join-wait">
     <PlayerAvatar player={player} packs={packs} size={156} className="late-join-avatar"/>
@@ -335,7 +361,7 @@ function QuestionMediaStage({ game, question }: { game: Game; question: Question
 
 function HostAnswerKey({ question }: { question: Question }) {
   const hasAnswer = question.answer !== undefined && answerLabel(question.answer).trim().length > 0
-  return <div className="host-answer-key"><div><ShieldCheck size={19}/><span>GM ANSWER KEY <small>Visible here before reveal</small></span></div><strong>{hasAnswer ? answerLabel(question.answer) : 'No reference answer — mark each response'}</strong>{question.answerImageUrl && <img className="host-question-image" src={question.answerImageUrl} alt={question.answerImageAlt || 'Answer image'}/>} {question.explanation && <p>{question.explanation}</p>}</div>
+  return <div className="host-answer-key"><div><ShieldCheck size={19}/><span>GM ANSWER KEY <small>Visible here before reveal</small></span></div><strong>{hasAnswer ? answerLabel(question.answer) : 'No reference answer — mark each response'}</strong>{question.answerImageUrl && <QuizMediaImage className="host-question-image" src={question.answerImageUrl} alt={question.answerImageAlt || 'Answer image'}/>} {question.explanation && <p>{question.explanation}</p>}</div>
 }
 
 function AnswerStage({ question, revealed }: { question: Question; revealed: boolean }) {
@@ -481,6 +507,7 @@ function Organiser() {
     nav('/editor')
   }
   const removeQuiz = async (id: string) => {
+    if (getLiveRole()) { setCloudStatus('End the live session before deleting a quiz.'); return }
     if (!confirm('Delete this quiz? This cannot be undone.')) return
     setCloudBusy(true)
     setCloudStatus('Deleting quiz from your cloud library…')
@@ -498,21 +525,45 @@ function Organiser() {
       setCloudStatus(`Theme set to ${quizThemes[theme].name}`)
     } catch (error) { setCloudStatus(`Theme change failed: ${(error as Error).message}`) }
   }
-  const exportQuiz = (quiz: QuizTemplate) => {
-    const payload = JSON.stringify({ format: 'xp-studio-pack', version: 3, exportedAt: new Date().toISOString(), quiz: { title: quiz.title, theme: quiz.theme, introTheme: quiz.introTheme || quiz.theme, exitTheme: quiz.exitTheme || quiz.theme, roundThemes: quiz.roundThemes || {}, questions: quiz.questions } }, null, 2)
-    const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${quiz.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'quiz'}.xpstudio.json`
-    link.click()
-    URL.revokeObjectURL(url)
+  const exportQuiz = async (quiz: QuizTemplate) => {
+    setCloudBusy(true)
+    setCloudStatus('Preparing quiz pack and images…')
+    try {
+      const questions = await Promise.all(quiz.questions.map(async question => ({
+        ...question,
+        imageUrl: question.imageUrl ? await readQuizMedia(question.imageUrl) : undefined,
+        answerImageUrl: question.answerImageUrl ? await readQuizMedia(question.answerImageUrl) : undefined,
+      })))
+      const payload = JSON.stringify({ format: 'xp-studio-pack', version: 4, exportedAt: new Date().toISOString(), quiz: { title: quiz.title, theme: quiz.theme, introTheme: quiz.introTheme || quiz.theme, exitTheme: quiz.exitTheme || quiz.theme, roundThemes: quiz.roundThemes || {}, questions } }, null, 2)
+      const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${quiz.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'quiz'}.xpstudio.json`
+      link.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setCloudStatus(`Exported “${quiz.title}” with its images`)
+    } catch (error) { setCloudStatus(`Export failed: ${(error as Error).message}`) }
+    finally { setCloudBusy(false) }
   }
   const importQuizPack = async (file?: File) => {
     if (!file) return
     setCloudBusy(true)
     try {
       const pack = readQuizPack(await file.text())
-      const quiz = importQuiz(pack.title, pack.questions, pack.theme, pack.roundThemes, pack.introTheme, pack.exitTheme)
+      const quizId = crypto.randomUUID()
+      const questions = [] as Question[]
+      for (const question of pack.questions) {
+        const next = { ...question }
+        for (const key of ['imageUrl', 'answerImageUrl'] as const) {
+          const image = next[key]
+          if (image?.startsWith('data:')) {
+            setCloudStatus(`Uploading quiz image ${questions.length + 1} of ${pack.questions.length}…`)
+            next[key] = await uploadQuizMedia(quizId, image)
+          }
+        }
+        questions.push(next)
+      }
+      const quiz = importQuiz(pack.title, questions, pack.theme, pack.roundThemes, pack.introTheme, pack.exitTheme, quizId)
       try { await saveQuizTemplateCloud(quiz); setCloudStatus(`Imported “${quiz.title}” and saved it to your cloud library`) }
       catch (error) { setCloudStatus(`Imported “${quiz.title}” in this browser; cloud sync failed: ${(error as Error).message}`) }
       nav('/editor')
@@ -527,7 +578,7 @@ function Organiser() {
       const rounds = new Set(quiz.questions.map(question => question.round)).size
       const selected = quiz.id === library.activeQuizId
       const theme = quiz.theme || 'quiz-show'
-      return <div className={`quiz-card ${selected ? 'selected-quiz' : ''}`} key={quiz.id}><div className={`quiz-cover theme-${theme}`} style={{...themeSurfaceStyle(theme),backgroundImage:`linear-gradient(#080b1370,#080b1370),url(${asset(`themes/${theme}/background.webp`)})`}}><small>{quiz.builtIn?'STARTER QUIZ PACK':'THEME PREVIEW'}</small><strong>{quizThemes[theme].name}</strong><span>Question One</span></div><div className="quiz-details"><div className="quiz-badges"><Badge tone={selected?'green':'gray'}>{selected?'SELECTED':'READY'}</Badge><Badge>{quizThemes[theme].name}</Badge>{quiz.builtIn&&<Badge tone="amber">STARTER PACK</Badge>}</div><h3>{quiz.title}</h3><p>{rounds} {rounds === 1 ? 'round' : 'rounds'} · {quiz.questions.length} {quiz.questions.length === 1 ? 'question' : 'questions'}</p><label className="quiz-theme-quick"><span>DEFAULT QUIZ THEME</span><select value={theme} onChange={event=>void chooseTheme(quiz.id,event.target.value as QuizTheme)} disabled={cloudBusy}>{quizThemeIds.map(themeId=><option key={themeId} value={themeId}>{quizThemes[themeId].name}</option>)}</select><small>Styles XP Play and the Main Screen.</small></label><div className="quiz-card-actions"><Button onClick={() => openQuiz(quiz.id,'/host')}><Play size={17}/> Host this quiz</Button>{!quiz.builtIn&&<Button variant="secondary" onClick={() => openQuiz(quiz.id,'/editor')}><Edit3 size={16}/> Edit quiz</Button>}<Button variant="ghost" onClick={()=>exportQuiz(quiz)}><Download size={15}/> Export</Button><Button variant="ghost" onClick={()=>void copyQuiz(quiz.id)}><Copy size={15}/>{quiz.builtIn?'Copy to edit':'Duplicate'}</Button>{!quiz.builtIn&&<Button variant="danger" disabled={cloudBusy} onClick={()=>void removeQuiz(quiz.id)}><Trash2 size={15}/> Delete</Button>}</div></div></div>
+      return <div className={`quiz-card ${selected ? 'selected-quiz' : ''}`} key={quiz.id}><div className={`quiz-cover theme-${theme}`} style={{...themeSurfaceStyle(theme),backgroundImage:`linear-gradient(#080b1370,#080b1370),url(${asset(`themes/${theme}/background.webp`)})`}}><small>{quiz.builtIn?'STARTER QUIZ PACK':'THEME PREVIEW'}</small><strong>{quizThemes[theme].name}</strong><span>Question One</span></div><div className="quiz-details"><div className="quiz-badges"><Badge tone={selected?'green':'gray'}>{selected?'SELECTED':'READY'}</Badge><Badge>{quizThemes[theme].name}</Badge>{quiz.builtIn&&<Badge tone="amber">STARTER PACK</Badge>}</div><h3>{quiz.title}</h3><p>{rounds} {rounds === 1 ? 'round' : 'rounds'} · {quiz.questions.length} {quiz.questions.length === 1 ? 'question' : 'questions'}</p><label className="quiz-theme-quick"><span>DEFAULT QUIZ THEME</span><select value={theme} onChange={event=>void chooseTheme(quiz.id,event.target.value as QuizTheme)} disabled={cloudBusy}>{quizThemeIds.map(themeId=><option key={themeId} value={themeId}>{quizThemes[themeId].name}</option>)}</select><small>Styles XP Play and the Main Screen.</small></label><div className="quiz-card-actions"><Button onClick={() => openQuiz(quiz.id,'/host')}><Play size={17}/> Host this quiz</Button>{!quiz.builtIn&&<Button variant="secondary" onClick={() => openQuiz(quiz.id,'/editor')}><Edit3 size={16}/> Edit quiz</Button>}<Button variant="ghost" disabled={cloudBusy} onClick={()=>void exportQuiz(quiz)}><Download size={15}/> Export</Button><Button variant="ghost" onClick={()=>void copyQuiz(quiz.id)}><Copy size={15}/>{quiz.builtIn?'Copy to edit':'Duplicate'}</Button>{!quiz.builtIn&&<Button variant="danger" disabled={cloudBusy} onClick={()=>void removeQuiz(quiz.id)}><Trash2 size={15}/> Delete</Button>}</div></div></div>
     })}</div>
     <div className="section-title lower"><h2>Workspace tools</h2></div><div className="feature-grid"><Link to="/join" className="feature-card"><div className="feature-icon lilac"><Users size={21}/></div><h3>XP Play Portal</h3><p>The permanent player page people bookmark, scan and use to enter each game code.</p><span>Open XP Play <ArrowRight size={16}/></span></Link><Link to="/screen" className="feature-card"><div className="feature-icon coral"><MonitorPlay size={21}/></div><h3>Screen launcher</h3><p>Enter a live session code to load its presentation on any display.</p><span>Open screen launcher <ArrowRight size={16}/></span></Link><div className="feature-card"><div className="feature-icon mint"><Sparkles size={21}/></div><h3>Avatar collection</h3><p>{packs.reduce((total,pack) => total+pack.avatars.length,0)} characters across {packs.length} avatar packs.</p><span>Available to every player <Check size={16}/></span></div></div>
   </main></Shell>
@@ -551,6 +602,7 @@ function Editor() {
   const originalRound = game.questions[selected]?.round || draft.round
   const roundQuestionCount = game.questions.filter(question => question.round === originalRound).length
   const isDirty = JSON.stringify(draft) !== JSON.stringify(game.questions[selected]) || titleDraft !== game.title || themeDraft !== game.theme || introThemeDraft !== (game.introTheme || game.theme) || exitThemeDraft !== (game.exitTheme || game.theme) || roundThemeDraft !== (game.roundThemes?.[draft.round] || '')
+  const uploadedImageCount = game.questions.reduce((count, question, index) => count + [index === selected ? draft.imageUrl : question.imageUrl, index === selected ? draft.answerImageUrl : question.answerImageUrl].filter(url => Boolean(parseQuizMediaRef(url))).length, 0)
   const syncStructure = async (message: string) => {
     try {
       const template = getActiveQuizTemplate()
@@ -564,17 +616,24 @@ function Editor() {
     if (!titleDraft.trim()) { setValidation('Enter a quiz name.'); return }
     const invalid = validateQuestionDraft(draft)
     if (invalid) { setValidation(invalid); return }
-    const mediaSize = game.questions.reduce((total, question, index) => total + questionMediaSize(index === selected ? draft : question), 0)
-    if (mediaSize > 650_000) { setValidation('This quiz contains too much uploaded image data. Use hosted image URLs or remove an image.'); return }
-    const prepared = normaliseQuestion(draft.type === 'anagram' ? {...draft, round: draft.round.trim(), answer: word, duration: Math.max(10, draft.duration || 30), scramble: scrambleWord(word)} : {...draft, round: draft.round.trim()})
+    let prepared = normaliseQuestion(draft.type === 'anagram' ? {...draft, round: draft.round.trim(), answer: word, duration: Math.max(10, draft.duration || 30), scramble: scrambleWord(word)} : {...draft, round: draft.round.trim()})
     if (prepared.round !== originalRound && !roundNames.includes(prepared.round)) { setValidation('Create a round first, then move this question into it.'); return }
     let nextSelected = selected
+    let savedLocally = false
     setSaving(true)
-    update(gameDraft => {
+    try {
+      const quizId = activeTemplate?.id
+      if (!quizId) throw new Error('Select a quiz before saving images.')
+      const questions: Question[] = []
+      for (let index = 0; index < game.questions.length; index++) questions.push(await storeEmbeddedQuestionMedia(index === selected ? prepared : game.questions[index], quizId))
+      prepared = questions[selected]
+      if (questions.reduce((total, question) => total + questionMediaSize(question), 0) > 650_000) throw new Error('This quiz has too much inline image data. Replace any older images with a new upload.')
+      update(gameDraft => {
       gameDraft.title = titleDraft.trim()
       gameDraft.theme = themeDraft
       gameDraft.introTheme = introThemeDraft
       gameDraft.exitTheme = exitThemeDraft
+      gameDraft.questions = questions
       if (prepared.round === originalRound) gameDraft.questions[selected] = prepared
       else {
         const moved = moveToRound(gameDraft.questions, prepared.id, prepared.round)
@@ -585,15 +644,15 @@ function Editor() {
       if (roundThemeDraft) roundThemes[prepared.round] = roundThemeDraft
       else delete roundThemes[prepared.round]
       gameDraft.roundThemes = roundThemes
-    })
-    if (nextSelected !== selected) setSelected(nextSelected)
-    const template = getActiveQuizTemplate()
-    try {
+      })
+      savedLocally = true
+      if (nextSelected !== selected) setSelected(nextSelected)
+      const template = getActiveQuizTemplate()
       if (template) await saveQuizTemplateCloud(template)
       setValidation('')
       setSavedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
     } catch (error) {
-      setValidation(`Saved in this browser, but cloud sync failed: ${(error as Error).message}`)
+      setValidation(`${savedLocally ? 'Saved in this browser, but cloud sync failed' : 'Could not save quiz image or question'}: ${(error as Error).message}`)
     }
     finally { setSaving(false) }
     setSaved(true)
@@ -658,7 +717,8 @@ function Editor() {
     setImageBusy(true)
     setValidation('')
     try {
-      const imageUrl = await compressQuestionImage(file)
+      if (!activeTemplate) throw new Error('Select a quiz before uploading an image.')
+      const imageUrl = await uploadQuizMedia(activeTemplate.id, await compressQuestionImage(file))
       setDraft(current => answerImage
         ? { ...current, answerImageUrl: imageUrl, answerImageAlt: current.answerImageAlt || file.name.replace(/\.[^.]+$/, '') }
         : { ...current, imageUrl, imageAlt: current.imageAlt || file.name.replace(/\.[^.]+$/, '') })
@@ -693,7 +753,7 @@ function Editor() {
   }
   const previewTheme = roundThemeDraft || themeDraft
   return <Shell active="Quiz editor"><main className="page editor-page">
-    <div className="page-heading"><div><div className="eyebrow dark">QUIZ EDITOR</div><h1>{game.title}</h1><p>Build rounds, add questions within each round, and move questions between them.</p><span className={`editor-save-state ${isDirty ? 'dirty' : 'ready'}`}>{saving ? 'Saving…' : isDirty ? 'Unsaved changes' : savedAt ? `Saved at ${savedAt}` : 'Saved in this browser'}</span></div><div className="host-head-actions"><Button variant="secondary" onClick={runPreflight}><ShieldCheck size={17}/> Check quiz</Button><Button variant="secondary" onClick={createRound}><Plus size={17}/> New round</Button><Button onClick={() => addQuestion()}><Plus size={17}/> Add question to {originalRound}</Button></div></div>
+    <div className="page-heading"><div><div className="eyebrow dark">QUIZ EDITOR</div><h1>{game.title}</h1><p>Build rounds, add questions within each round, and move questions between them.</p><span className={`editor-save-state ${isDirty ? 'dirty' : 'ready'}`}>{saving ? 'Saving…' : isDirty ? 'Unsaved changes' : savedAt ? `Saved at ${savedAt}` : 'Saved in this browser'}</span><small className="editor-media-usage">{uploadedImageCount} private {uploadedImageCount === 1 ? 'image' : 'images'} in this quiz · up to {(uploadedImageCount * 0.15).toFixed(1)} MB of compressed image data</small></div><div className="host-head-actions"><Button variant="secondary" onClick={runPreflight}><ShieldCheck size={17}/> Check quiz</Button><Button variant="secondary" onClick={createRound}><Plus size={17}/> New round</Button><Button onClick={() => addQuestion()}><Plus size={17}/> Add question to {originalRound}</Button></div></div>
     {preflightIssues&&<div className={`preflight-report ${preflightIssues.length?'has-issues':'ready'}`}><strong>{preflightIssues.length ? `${preflightIssues.length} item${preflightIssues.length===1?'':'s'} to check` : 'Quiz ready to host'}</strong>{preflightIssues.length?<ul>{preflightIssues.map(issue=><li key={issue}>{issue}</li>)}</ul>:<span>Every question has the information needed to run.</span>}<button onClick={()=>setPreflightIssues(null)}>Close</button></div>}
     <div className="editor-grid">
       <div className="editor-list"><div className="editor-list-head"><strong>Rounds</strong><span>{countLabel(roundNames.length, 'round')} · {countLabel(game.questions.length, 'question')}</span></div>{roundNames.map((round, roundIndex) => <section className="editor-round-group" key={round}><div className="editor-round-group-head"><div><small>ROUND {roundIndex + 1}</small><strong>{round}</strong><span>{countLabel(game.questions.filter(question => question.round === round).length, 'question')}</span></div><button type="button" aria-label={`Add question to ${round}`} title={`Add question to ${round}`} onClick={() => addQuestion(round)}><Plus size={17}/></button></div>{game.questions.map((question,index) => question.round === round ? <button key={question.id} className={`question-row ${selected===index?'chosen':''}`} onClick={() => { if (isDirty) { setValidation('Save the current question before selecting another.'); return } setSelected(index) }}><span className="question-number">{String(index+1).padStart(2,'0')}</span><span><strong>{question.prompt}</strong><small>{typeNames[question.type]}</small></span></button> : null)}</section>)}</div>
@@ -714,7 +774,7 @@ function Editor() {
             <div className={`theme-picker theme-${previewTheme}`} style={themeSurfaceStyle(previewTheme)}><div><small>{roundThemeDraft?'ROUND THEME OVERRIDE':'QUIZ DEFAULT THEME'}</small><strong>{quizThemes[previewTheme].name}</strong><span className="theme-font-preview">Question One · Ready to Play?</span><span>{quizThemes[previewTheme].description}</span></div></div>
           </div>
         </details>
-        <div className="media-editor"><div className="media-editor-head"><div><strong>Question image</strong><span>Optional for every format; required for photo reveal and zoom.</span></div>{draft.imageUrl&&<button onClick={()=>setDraft({...draft,imageUrl:undefined,imageAlt:undefined})}><Trash2 size={15}/> Remove</button>}</div><label>Image URL<input value={draft.imageUrl?.startsWith('data:') ? '' : draft.imageUrl || ''} placeholder="https://…" onChange={event=>setDraft({...draft,imageUrl:event.target.value})}/></label><label className="image-upload"><ImagePlus size={18}/>{imageBusy?'Preparing image…':'Upload and compress image'}<input type="file" accept="image/*" disabled={imageBusy} onChange={event=>void chooseImage(event.target.files?.[0])}/></label>{draft.imageUrl&&<div className="media-preview"><img src={draft.imageUrl} alt={draft.imageAlt || 'Question preview'}/></div>}<label>Image description<input value={draft.imageAlt || ''} onChange={event=>setDraft({...draft,imageAlt:event.target.value})} placeholder="Describe the image for accessibility"/></label><small className="field-help">Uploads are compressed in your browser. Hosted image URLs keep large quizzes smaller.</small></div>
+        <div className="media-editor"><div className="media-editor-head"><div><strong>Question image</strong><span>Optional for every format; required for photo reveal and zoom.</span></div>{draft.imageUrl&&<button onClick={()=>setDraft({...draft,imageUrl:undefined,imageAlt:undefined})}><Trash2 size={15}/> Remove</button>}</div><label>Image URL<input value={parseQuizMediaRef(draft.imageUrl) || draft.imageUrl?.startsWith('data:') ? '' : draft.imageUrl || ''} placeholder="https://…" onChange={event=>setDraft({...draft,imageUrl:event.target.value})}/></label><label className="image-upload"><ImagePlus size={18}/>{imageBusy?'Uploading image…':'Upload image to quiz'}<input type="file" accept="image/*" disabled={imageBusy} onChange={event=>void chooseImage(event.target.files?.[0])}/></label>{draft.imageUrl&&<div className="media-preview"><QuizMediaImage src={draft.imageUrl} alt={draft.imageAlt || 'Question preview'}/></div>}<label>Image description<input value={draft.imageAlt || ''} onChange={event=>setDraft({...draft,imageAlt:event.target.value})} placeholder="Describe the image for accessibility"/></label><small className="field-help">Uploads are compressed and saved to your private quiz library. Save the question to use the image. You can also paste an HTTPS image URL.</small></div>
         {draft.options && ['single','multi'].includes(draft.type) && <label>Answer options<div className="option-edit">{draft.options.map((option,index)=><div className="option-edit-row" key={index}><input value={option} onChange={event=>{const options=draft.options?.map((value,itemIndex)=>itemIndex===index?event.target.value:value);const answer=draft.type==='single'&&draft.answer===option?event.target.value:draft.type==='multi'&&Array.isArray(draft.answer)?draft.answer.map(value=>value===option?event.target.value:value):draft.answer;setDraft({...draft,options,answer})}}/><button type="button" aria-label={`Remove option ${index+1}`} disabled={(draft.options?.length||0)<=2} onClick={()=>{const options=draft.options?.filter((_,itemIndex)=>itemIndex!==index);const answer=draft.type==='single'&&draft.answer===option?options?.[0]||'':draft.type==='multi'&&Array.isArray(draft.answer)?draft.answer.filter(value=>value!==option):draft.answer;setDraft({...draft,options,answer})}}><Trash2 size={15}/></button></div>)}<button className="option-add" type="button" onClick={()=>setDraft({...draft,options:[...(draft.options||[]),`Answer ${(draft.options?.length||0)+1}`]})}><Plus size={15}/> Add option</button></div></label>}
         {draft.type==='single'&&<label>Correct answer<select value={String(draft.answer||'')} onChange={event=>setDraft({...draft,answer:event.target.value})}>{draft.options?.map(option=><option key={option}>{option}</option>)}</select></label>}
         {draft.type==='multi'&&<label>Correct answers<input value={Array.isArray(draft.answer)?draft.answer.join(', '):''} onChange={event=>setDraft({...draft,answer:event.target.value.split(',').map(value=>value.trim()).filter(Boolean)})} placeholder="Answer A, Answer C"/><small className="field-help">Separate correct options with commas.</small></label>}
@@ -728,7 +788,7 @@ function Editor() {
         {draft.type==='text'&&<><label>Correct answer to display<input value={Array.isArray(draft.answer)?draft.answer[0] || '':String(draft.answer || '')} onChange={event=>setDraft({...draft,answer:[event.target.value,...(Array.isArray(draft.answer)?draft.answer.slice(1):[])]})} placeholder="e.g. New York"/><small className="field-help">This is the only correct answer shown to players at reveal. Leave both fields blank to mark every response yourself.</small></label><label>Accepted variants (private)<textarea value={Array.isArray(draft.answer)?draft.answer.slice(1).join('\n'):''} onChange={event=>setDraft({...draft,answer:[Array.isArray(draft.answer)?draft.answer[0] || '':String(draft.answer || ''),...event.target.value.split('\n')]})} placeholder={'NYC\nNew York City'}/><small className="field-help">One variant per line. These also score automatically, but are never sent to players. Other responses go to the Host for verification.</small></label></>}
 
         {['photo-reveal','photo-zoom'].includes(draft.type)&&<label>Correct answer<input value={String(draft.answer||'')} onChange={event=>setDraft({...draft,answer:event.target.value})} placeholder="Answer players should type"/></label>}
-        <div className="media-editor"><div className="media-editor-head"><div><strong>Answer image (optional)</strong><span>Shown with the answer text when you reveal. Leave blank to keep the question image.</span></div>{draft.answerImageUrl&&<button onClick={()=>setDraft({...draft,answerImageUrl:undefined,answerImageAlt:undefined})}><Trash2 size={15}/> Remove answer image</button>}</div><label>Answer image URL<input value={draft.answerImageUrl?.startsWith('data:') ? '' : draft.answerImageUrl || ''} placeholder="https://…" onChange={event=>setDraft({...draft,answerImageUrl:event.target.value.trim()})}/></label><label className="image-upload"><ImagePlus size={18}/>{imageBusy?'Preparing image…':'Upload and compress answer image'}<input type="file" accept="image/*" disabled={imageBusy} onChange={event=>void chooseImage(event.target.files?.[0],true)}/></label>{draft.answerImageUrl&&<div className="media-preview"><img src={draft.answerImageUrl} alt={draft.answerImageAlt || 'Answer preview'}/></div>}<label>Answer image description<input value={draft.answerImageAlt || ''} onChange={event=>setDraft({...draft,answerImageAlt:event.target.value})} placeholder="Describe the revealed image for accessibility"/></label><small className="field-help">The answer image and its description stay private until reveal. Uploads use the same compression and quiz size limit as question images.</small></div>
+        <div className="media-editor"><div className="media-editor-head"><div><strong>Answer image (optional)</strong><span>Shown with the answer text when you reveal. Leave blank to keep the question image.</span></div>{draft.answerImageUrl&&<button onClick={()=>setDraft({...draft,answerImageUrl:undefined,answerImageAlt:undefined})}><Trash2 size={15}/> Remove answer image</button>}</div><label>Answer image URL<input value={parseQuizMediaRef(draft.answerImageUrl) || draft.answerImageUrl?.startsWith('data:') ? '' : draft.answerImageUrl || ''} placeholder="https://…" onChange={event=>setDraft({...draft,answerImageUrl:event.target.value.trim()})}/></label><label className="image-upload"><ImagePlus size={18}/>{imageBusy?'Uploading image…':'Upload answer image to quiz'}<input type="file" accept="image/*" disabled={imageBusy} onChange={event=>void chooseImage(event.target.files?.[0],true)}/></label>{draft.answerImageUrl&&<div className="media-preview"><QuizMediaImage src={draft.answerImageUrl} alt={draft.answerImageAlt || 'Answer preview'}/></div>}<label>Answer image description<input value={draft.answerImageAlt || ''} onChange={event=>setDraft({...draft,answerImageAlt:event.target.value})} placeholder="Describe the revealed image for accessibility"/></label><small className="field-help">The answer image stays private until reveal. Uploads are stored separately so you can use dozens of images in one quiz.</small></div>
         <label>Answer explanation (optional)<textarea value={draft.explanation || ''} onChange={event=>setDraft({...draft,explanation:event.target.value})} placeholder="Shown after the answer is revealed."/></label>
         {validation&&<div className="error">{validation}</div>}
         <div className="form-two"><label>Maximum points<input type="number" value={draft.points} onChange={event=>setDraft({...draft,points:Number(event.target.value)})}/></label><label>Timer (seconds)<input type="number" value={draft.duration || 30} onChange={event=>setDraft({...draft,duration:Number(event.target.value)})}/></label></div>
@@ -911,7 +971,7 @@ function Host() {
     </> : <div className="host-session-empty"><span className="status-orb"><Play size={18}/></span><div><strong>No live session yet</strong><p>Your XP Studio sign-in is remembered by this browser. Starting a session creates a new game or reconnects your current one.</p></div></div>}
     <div className="host-grid">
       <div className="host-main">
-        <div className="host-question"><div className="host-q-top"><Badge>{q?.round || 'ROUND 1'}</Badge><span>QUESTION {game.questionIndex+1} / {game.questions.length}</span></div><h2>{q?.prompt}</h2>{q?.imageUrl&&<img className="host-question-image" src={q.imageUrl} alt={q.imageAlt || 'Question image'}/>}<div className="host-q-meta"><span><Clock3 size={16}/>{q?.duration || 30}s timer</span><span><Trophy size={16}/>{q?.points} max</span><span>{q ? typeNames[q.type] : ''}</span>{q&&<span>{scoringSummary(q)}</span>}</div>{q && <HostAnswerKey question={q}/>}{q?.options && <div className="host-options">{q.options.map((option,index)=><div key={option}><span>{'ABCD'[index]}</span>{option}</div>)}</div>}</div>
+        <div className="host-question"><div className="host-q-top"><Badge>{q?.round || 'ROUND 1'}</Badge><span>QUESTION {game.questionIndex+1} / {game.questions.length}</span></div><h2>{q?.prompt}</h2>{q?.imageUrl&&<QuizMediaImage className="host-question-image" src={q.imageUrl} alt={q.imageAlt || 'Question image'}/>}<div className="host-q-meta"><span><Clock3 size={16}/>{q?.duration || 30}s timer</span><span><Trophy size={16}/>{q?.points} max</span><span>{q ? typeNames[q.type] : ''}</span>{q&&<span>{scoringSummary(q)}</span>}</div>{q && <HostAnswerKey question={q}/>}{q?.options && <div className="host-options">{q.options.map((option,index)=><div key={option}><span>{'ABCD'[index]}</span>{option}</div>)}</div>}</div>
         <div className="control-card live-control-card"><div><small className="next-action-label">NEXT ACTION · {phaseNames[game.phase]}</small><h3>{next}</h3><p>{liveConnected ? 'Updates the Main Screen and every connected player automatically.' : 'Start the live session before advancing the quiz.'}</p></div><div className="control-buttons"><Button onClick={()=>void liveAction(game.phase==='break'?'resume':game.phase==='thanks'?'end':'advance')} disabled={!liveConnected||!canControl||game.phase==='closed-game'||liveBusy}>{next}<ArrowRight size={18}/></Button>{game.phase==='open'&&<Button variant="secondary" onClick={()=>void liveAction('extend')} disabled={!liveConnected||!canControl||liveBusy}><Clock3 size={16}/> Add 10 seconds</Button>}{['reveal','scores','round-scores','leaderboard','round-intro'].includes(game.phase)&&<Button variant="secondary" onClick={()=>void liveAction('break')} disabled={!liveConnected||!canControl||liveBusy}>Take a break</Button>}{['question','open','closed','reveal'].includes(game.phase)&&<Button variant="danger" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>{if(confirm('Void this question? Its points will be removed.'))void liveAction('void')}}>Void question</Button>}{!['thanks','closed-game'].includes(game.phase)&&<Button variant="danger" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>{if(confirm('End this live session? Players will see the themed finale. The session will be deleted after 24 hours.'))void liveAction('end')}}>End session</Button>}</div></div>
         <div className="response-card"><div className="card-title"><div><h3>Incoming answers</h3><small className="card-subtitle">Responses needing a decision are shown first.</small></div><Badge tone={game.phase==='open'?'green':'gray'}>{answered.length} / {eligibleIds.length} submitted</Badge></div>{answered.length>0&&<div className="response-summary"><span className={pendingReviewCount ? 'attention' : ''}>{pendingReviewCount} need review</span><span>{markedCount} marked</span><span>{automaticCount} automatic</span><span>{unansweredPlayers.length} unanswered</span></div>}<div className="response-filters" aria-label="Answer filters">{(['all','review','marked','automatic','unanswered'] as const).map(filter=><button key={filter} className={responseFilter===filter?'selected':''} onClick={()=>setResponseFilter(filter)}>{filter}</button>)}</div>{responseFilter==='unanswered'?<div className="unanswered-list">{unansweredPlayers.length?unansweredPlayers.map(player=><div key={player.id}><PlayerAvatar player={player} packs={packs} size={34}/><strong>{player.name}</strong><Badge tone="gray">Waiting</Badge></div>):<div className="empty-state">Everyone eligible has answered.</div>}</div>:answered.length===0?<div className="empty-state">Player answers will appear here while the question is open.</div>:visibleResponseRows.length===0?<div className="empty-state">No answers match this filter.</div>:<div className="answer-list">{visibleResponseRows.map(({response,player,grade,needsVerification})=>{const canMark=needsVerification&&['open','closed','reveal'].includes(game.phase);return <div key={player.id} className={`answer-row ${needsVerification?'needs-verification':''}`}><div className="answer-player"><PlayerAvatar player={player} packs={packs}/><span><strong>{player.name}</strong><small>{new Date(response.submittedAt).toLocaleTimeString()}</small></span></div><span className="response-value">{typeof response.value==='object'?answerLabel(response.value):String(response.value)}</span>{needsVerification&&!grade&&<Badge tone="amber">Needs Host verification</Badge>}{q.type==='text'&&!needsVerification&&<Badge tone="green">Accepted answer match</Badge>}{canMark&&<div className="mark-buttons" aria-label={`Mark ${player.name}'s answer`}><button className={grade?.points===0?'selected':''} title="No credit" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>void liveAction('grade',{playerId:player.id,points:0})}>0%</button><button className={grade?.points===q.points*.5?'selected':''} title="Half credit" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>void liveAction('grade',{playerId:player.id,points:q.points*.5})}>50%</button><button className={grade?.points===q.points?'selected':''} title="Full credit" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>void liveAction('grade',{playerId:player.id,points:q.points})}>100%</button></div>}{!needsVerification&&game.phase==='reveal'&&<button className="score-override" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>{const raw=prompt(`Award points from 0 to ${q.points}`,String(grade?.points||0));if(raw!==null&&Number.isFinite(Number(raw)))void liveAction('grade',{playerId:player.id,points:Number(raw)})}}>Adjust</button>}{grade&&<Badge tone={grade.points?'green':'gray'}>{grade.points} pts · {grade.detail}</Badge>}</div>})}{q.type==='text'&&game.phase==='reveal'&&<button className="mark-remaining" disabled={!liveConnected||!canControl||liveBusy} onClick={()=>void liveAction('grade-all-zero')}>Mark all unverified responses 0</button>}</div>}</div>
       </div>
