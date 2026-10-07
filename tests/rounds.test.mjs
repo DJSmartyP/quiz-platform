@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { groupQuestionsByRound, insertInRound, moveToRound, roundNames } from '../src/rounds.ts'
+import { groupQuestionsByRound, insertInRound, moveRound, moveToRound, roundNames } from '../src/rounds.ts'
 
 const question = (id, round) => ({ id, round })
 
@@ -25,4 +25,19 @@ test('moving questions between rounds preserves consecutive round blocks', () =>
 test('older split rounds are grouped without changing order within each round', () => {
   const legacy = [question('a', 'Round 1'), question('b', 'Round 2'), question('c', 'Round 1'), question('d', 'Round 2')]
   assert.deepEqual(groupQuestionsByRound(legacy).map(item => item.id), ['a', 'c', 'b', 'd'])
+})
+
+test('moving a round keeps its questions together and in their original order', () => {
+  const original = [question('a', 'Warm up'), question('b', 'Warm up'), question('c', 'Pictures'), question('d', 'Pictures'), question('e', 'Finale')]
+  const moved = moveRound(original, 'Pictures', -1)
+  assert.deepEqual(moved.map(item => item.id), ['c', 'd', 'a', 'b', 'e'])
+  assert.deepEqual(roundNames(moved), ['Pictures', 'Warm up', 'Finale'])
+  assert.deepEqual(moveRound(moved, 'Pictures', 1).map(item => item.id), original.map(item => item.id))
+  assert.deepEqual(original.map(item => item.id), ['a', 'b', 'c', 'd', 'e'])
+})
+
+test('first and last rounds cannot move beyond quiz boundaries', () => {
+  const original = [question('a', 'First'), question('b', 'Last')]
+  assert.deepEqual(moveRound(original, 'First', -1), original)
+  assert.deepEqual(moveRound(original, 'Last', 1), original)
 })

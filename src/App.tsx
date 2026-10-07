@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { HashRouter, Link, NavLink, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowRight, Check, CircleHelp, Clock3, Copy, Download, Edit3, ExternalLink, Gamepad2, House, ImagePlus, LayoutDashboard, Maximize2, MonitorPlay, Play, Plus, ShieldCheck, Sparkles, Trash2, Trophy, Upload, Users, Wifi, WifiOff } from 'lucide-react'
+import { ArrowDown, ArrowRight, ArrowUp, Check, CircleHelp, Clock3, Copy, Download, Edit3, ExternalLink, Gamepad2, House, ImagePlus, LayoutDashboard, Maximize2, MonitorPlay, Play, Plus, ShieldCheck, Sparkles, Trash2, Trophy, Upload, Users, Wifi, WifiOff } from 'lucide-react'
 import { anagramDisplay, currentQuestion, currentTheme, gradeFor, isAnswerComplete, normalise, photoTileOrder, quizThemes, ranked, rankedRound, responseFor, roundPoints, sampleQuestions, scrambleWord, typeNames, type Game, type Player, type Question, type QuestionType, type QuizTheme } from './model'
 import { actionLabel, createQuiz, deleteQuiz, duplicateQuiz, expireAnswers, getActiveQuizTemplate, getLiveRole, getQuizLibrarySnapshot, importQuiz, leaveLiveRole, replaceQuizLibrary, scopeQuizWorkspace, selectQuiz, setQuizTheme, update, useGame, useQuizLibrary, type QuizTemplate } from './store'
 import { beginHostPopup, cleanupExpiredSessions, deleteLiveSession, deleteQuizTemplateCloud, followLiveScreen, hasHostSession, joinLiveGame, liveHostCommand, readQuizMedia, reconnectLivePlayer, restoreHostAccount, saveQuizTemplateCloud, signOutHost, startLiveHost, submitLiveAnswer, syncQuizLibrary, takeLiveControl, uploadQuizMedia, type HostAccount } from './live'
@@ -10,7 +10,7 @@ import QRCode from 'qrcode'
 import AdminDashboard from './AdminDashboard'
 import { answerMatches, normaliseQuestion, questionInstruction, scoringSummary } from './scoring'
 import { parseQuizMediaRef } from './quizMedia'
-import { insertInRound, moveToRound, roundNames as getRoundNames } from './rounds'
+import { insertInRound, moveRound, moveToRound, roundNames as getRoundNames } from './rounds'
 import './App.css'
 import './brand.css'
 
@@ -736,6 +736,19 @@ function Editor() {
     setSelected(nextIndex)
     void syncStructure('Question order saved.')
   }
+  const reorderRound = (round: string, direction: -1 | 1) => {
+    if (isDirty) { setValidation('Save the current question before changing round order.'); return }
+    const currentIndex = roundNames.indexOf(round)
+    if (currentIndex + direction < 0 || currentIndex + direction >= roundNames.length) return
+    const selectedId = game.questions[selected]?.id
+    let nextSelected = selected
+    update(gameDraft => {
+      gameDraft.questions = moveRound(gameDraft.questions, round, direction)
+      nextSelected = gameDraft.questions.findIndex(question => question.id === selectedId)
+    })
+    setSelected(nextSelected)
+    void syncStructure('Round order saved.')
+  }
   const chooseImage = async (file?: File, answerImage = false) => {
     if (!file) return
     setImageBusy(true)
@@ -780,7 +793,17 @@ function Editor() {
     <div className="page-heading"><div><div className="eyebrow dark">QUIZ EDITOR</div><h1>{game.title}</h1><p>Build rounds, add questions within each round, and move questions between them.</p><span className={`editor-save-state ${isDirty ? 'dirty' : 'ready'}`}>{saving ? 'Saving…' : isDirty ? 'Unsaved changes' : savedAt ? `Saved at ${savedAt}` : 'Saved in this browser'}</span><small className="editor-media-usage">{uploadedImageCount} private {uploadedImageCount === 1 ? 'image' : 'images'} in this quiz · up to {(uploadedImageCount * 0.15).toFixed(1)} MB of compressed image data</small></div><div className="host-head-actions"><Button variant="secondary" onClick={runPreflight}><ShieldCheck size={17}/> Check quiz</Button><Button variant="secondary" onClick={createRound}><Plus size={17}/> New round</Button><Button onClick={() => addQuestion()}><Plus size={17}/> Add question to {originalRound}</Button></div></div>
     {preflightIssues&&<div className={`preflight-report ${preflightIssues.length?'has-issues':'ready'}`}><strong>{preflightIssues.length ? `${preflightIssues.length} item${preflightIssues.length===1?'':'s'} to check` : 'Quiz ready to host'}</strong>{preflightIssues.length?<ul>{preflightIssues.map(issue=><li key={issue}>{issue}</li>)}</ul>:<span>Every question has the information needed to run.</span>}<button onClick={()=>setPreflightIssues(null)}>Close</button></div>}
     <div className="editor-grid">
-      <div className="editor-list"><div className="editor-list-head"><strong>Rounds</strong><span>{countLabel(roundNames.length, 'round')} · {countLabel(game.questions.length, 'question')}</span></div>{roundNames.map((round, roundIndex) => <section className="editor-round-group" key={round}><div className="editor-round-group-head"><div><small>ROUND {roundIndex + 1}</small><strong>{round}</strong><span>{countLabel(game.questions.filter(question => question.round === round).length, 'question')}</span></div><button type="button" aria-label={`Add question to ${round}`} title={`Add question to ${round}`} onClick={() => addQuestion(round)}><Plus size={17}/></button></div>{game.questions.map((question,index) => question.round === round ? <button key={question.id} className={`question-row ${selected===index?'chosen':''}`} onClick={() => { if (isDirty) { setValidation('Save the current question before selecting another.'); return } setSelected(index) }}><span className="question-number">{String(index+1).padStart(2,'0')}</span><span><strong>{question.prompt}</strong><small>{typeNames[question.type]}</small></span></button> : null)}</section>)}</div>
+      <div className="editor-list"><div className="editor-list-head"><strong>Rounds</strong><span>{countLabel(roundNames.length, 'round')} · {countLabel(game.questions.length, 'question')}</span></div>{roundNames.map((round, roundIndex) => <section className="editor-round-group" key={round}>
+        <div className="editor-round-group-head">
+          <div className="editor-round-heading"><small>ROUND {roundIndex + 1}</small><strong>{round}</strong><span>{countLabel(game.questions.filter(question => question.round === round).length, 'question')}</span></div>
+          <div className="editor-round-order-actions">
+            <button type="button" aria-label={`Move ${round} up`} title={`Move ${round} up`} disabled={roundIndex === 0} onClick={() => reorderRound(round, -1)}><ArrowUp size={16}/></button>
+            <button type="button" aria-label={`Move ${round} down`} title={`Move ${round} down`} disabled={roundIndex === roundNames.length - 1} onClick={() => reorderRound(round, 1)}><ArrowDown size={16}/></button>
+            <button type="button" aria-label={`Add question to ${round}`} title={`Add question to ${round}`} onClick={() => addQuestion(round)}><Plus size={17}/></button>
+          </div>
+        </div>
+        {game.questions.map((question,index) => question.round === round ? <button key={question.id} className={`question-row ${selected===index?'chosen':''}`} onClick={() => { if (isDirty) { setValidation('Save the current question before selecting another.'); return } setSelected(index) }}><span className="question-number">{String(index+1).padStart(2,'0')}</span><span><strong>{question.prompt}</strong><small>{typeNames[question.type]}</small></span></button> : null)}
+      </section>)}</div>
       <div className="editor-form">
         <div className="form-top"><div><Badge>{draft.round}</Badge><h2>Question {selected+1}</h2></div><Badge tone="gray">{scoringSummary(draft)}</Badge></div>
         <label htmlFor="question-type">Question type<select id="question-type" value={draft.type} onChange={event=>setDraft(changeQuestionType(draft,event.target.value as QuestionType))}>{questionTypes.map(type=><option key={type} value={type}>{typeNames[type]}</option>)}</select></label>
