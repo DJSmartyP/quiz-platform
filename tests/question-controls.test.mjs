@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { anagramDisplay, currentTheme, isAnswerComplete, photoTileOrder, sampleQuestions } from '../src/model.ts'
-import { normaliseQuestion, scoreQuestion } from '../src/scoring.ts'
+import { anagramDisplay, currentTheme, isAnswerComplete, isPhotoChoiceQuestion, photoTileOrder, sampleQuestions } from '../src/model.ts'
+import { normaliseQuestion, questionInstruction, scoreQuestion } from '../src/scoring.ts'
 
 const question = type => sampleQuestions.find(item => item.type === type)
 
@@ -33,6 +33,20 @@ test('photo questions use text answers and progressive reveal scoring', () => {
   const response = (questionId, value, submittedAt) => ({ playerId: 'p1', questionId, value, submittedAt })
   assert.equal(scoreQuestion(reveal, [response(reveal.id, ' platypus ', 1000)], ['p1'], { openedAt: 1000 })[0].points, 1000)
   assert.equal(scoreQuestion(zoom, [response(zoom.id, 'duck', 1000)], ['p1'], { openedAt: 1000 })[0].points, 0)
+})
+
+test('photo questions can use choices while retaining progressive scoring', () => {
+  const base = { id: 'photo-choice', round: 'Pictures', type: 'photo-reveal', prompt: 'What is shown?', photoAnswerMode: 'choice', options: ['Platypus', 'Otter', 'Beaver'], answer: 'Platypus', points: 1000, duration: 30 }
+  assert.equal(isPhotoChoiceQuestion(base), true)
+  assert.match(questionInstruction(base), /Pick the picture answer/)
+  const response = (value, submittedAt) => ({ playerId: 'p1', questionId: base.id, value, submittedAt })
+  assert.equal(scoreQuestion(base, [response('Platypus', 1000)], ['p1'], { openedAt: 1000 })[0].points, 1000)
+  assert.ok(scoreQuestion(base, [response('Platypus', 15000)], ['p1'], { openedAt: 1000 })[0].points < 1000)
+  assert.equal(scoreQuestion(base, [response('Otter', 1000)], ['p1'], { openedAt: 1000 })[0].points, 0)
+  const zoom = { ...base, type: 'photo-zoom' }
+  assert.equal(isPhotoChoiceQuestion(zoom), true)
+  assert.match(questionInstruction(zoom), /zoomed-in/)
+  assert.equal(isPhotoChoiceQuestion({ ...base, photoAnswerMode: undefined }), false)
 })
 
 test('legacy scoreMode imports are accepted but removed during normalisation', () => {

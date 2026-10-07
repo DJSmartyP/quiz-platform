@@ -145,6 +145,7 @@ export type Question = {
   numberBands?: NumberBand[]
   duration?: number
   options?: string[]
+  photoAnswerMode?: 'text' | 'choice'
   items?: string[]
   categories?: string[]
   answer?: string | string[] | Record<string, string> | number | boolean
@@ -221,6 +222,9 @@ export const typeInstructions: Record<QuestionType, string> = {
   'photo-reveal': 'Watch the picture appear, then type what you think it is.',
   'photo-zoom': 'Watch the picture zoom out, then type what you think it is.',
 }
+
+export const isPhotoChoiceQuestion = (question: Question) =>
+  (question.type === 'photo-reveal' || question.type === 'photo-zoom') && question.photoAnswerMode === 'choice'
 
 export function scrambleWord(answer: string): string {
   const source = answer.toUpperCase()

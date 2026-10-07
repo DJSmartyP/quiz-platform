@@ -683,3 +683,15 @@
   aspect-ratio:var(--question-image-ratio,1);
   border:0;
 }
+
+/* Picture questions use the open centre of the slide; answer choices reserve their own space below. */
+.screen-question:is(.type-photo-reveal,.type-photo-zoom){--photo-stage-size:clamp(210px,46vh,510px)}
+.screen-question:is(.type-photo-reveal,.type-photo-zoom):has(.screen-options){--photo-stage-size:clamp(165px,27vh,300px)}
+.screen.phase-reveal .screen-question:is(.type-photo-reveal,.type-photo-zoom):not(:has(.screen-options)){--photo-stage-size:clamp(190px,34vh,390px)}
+.screen-question:is(.type-photo-reveal,.type-photo-zoom) .screen-question-focus{justify-content:center}
+.screen-question:is(.type-photo-reveal,.type-photo-zoom) .screen-question-focus>.question-media{flex:0 0 auto;max-height:none;margin:0 auto 8px}
+.screen-question.type-photo-reveal .screen-question-focus>.question-media.photo-reveal{width:min(100%,calc(var(--photo-stage-size) * var(--question-image-ratio,1)));height:auto;aspect-ratio:var(--question-image-ratio,1)}
+.screen-question.type-photo-zoom .screen-question-focus>.question-media.photo-zoom{width:min(100%,var(--photo-stage-size));height:var(--photo-stage-size);aspect-ratio:1}
+.screen-question:is(.type-photo-reveal,.type-photo-zoom) .screen-question-focus>h1{margin:6px auto 10px!important;padding-block:8px;font-size:clamp(27px,3.3vw,52px)}
+.screen-question:is(.type-photo-reveal,.type-photo-zoom):has(.screen-options) .screen-options>div{min-height:clamp(56px,8vh,78px);padding:8px 14px;font-size:clamp(17px,1.6vw,24px)}
+@media(max-height:680px){.screen-question:is(.type-photo-reveal,.type-photo-zoom){--photo-stage-size:clamp(140px,35vh,270px)}.screen-question:is(.type-photo-reveal,.type-photo-zoom):has(.screen-options){--photo-stage-size:clamp(110px,20vh,175px)}}

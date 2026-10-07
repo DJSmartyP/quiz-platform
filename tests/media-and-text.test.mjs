@@ -26,6 +26,19 @@ test('answer images stay private until reveal, preserve question images and fall
   assert.equal(questionMediaSize(imported), question.imageUrl.length + question.answerImageUrl.length)
 })
 
+test('photo choice options are public only for the current question and the answer stays hidden', () => {
+  const game = freshGame()
+  const question = { ...game.questions[0], type: 'photo-zoom', photoAnswerMode: 'choice', options: ['Mars', 'Venus', 'Jupiter'], answer: 'Mars' }
+  game.questions = [question, { ...question, id: 'future' }]
+  const shared = publicGame({ ...game, phase: 'open' })
+  assert.equal(shared.questions[0].photoAnswerMode, 'choice')
+  assert.deepEqual(shared.questions[0].options, question.options)
+  assert.equal(shared.questions[0].answer, undefined)
+  assert.equal(shared.questions[1].options, undefined)
+  assert.equal(shared.questions[1].photoAnswerMode, undefined)
+  assert.equal(publicGame({ ...game, phase: 'reveal' }).questions[0].answer, 'Mars')
+})
+
 test('written answers score private variants while revealing only the primary wording', () => {
   const game = freshGame()
   const question = normaliseQuestion({ ...game.questions[0], type: 'text', answer: [' New York ', ' New York City ', 'NYC', ''] })

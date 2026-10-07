@@ -1,4 +1,4 @@
-import { anagramDisplay, normalise, type Grade, type GradeVerdict, type Player, type Question, type Response, type ServerOrder } from './model.ts'
+import { anagramDisplay, isPhotoChoiceQuestion, normalise, type Grade, type GradeVerdict, type Player, type Question, type Response, type ServerOrder } from './model.ts'
 
 const clamp = (value: number, minimum = 0, maximum = 1) => Math.min(maximum, Math.max(minimum, value))
 export const roundScore = (value: number) => Math.max(0, Math.round(value / 10) * 10)
@@ -40,7 +40,9 @@ export function normaliseNumberBands(bands: Question['numberBands']) {
   })
 }
 
-export const questionInstruction = (question: Question): string => question.placementMode === 'fastest-correct'
+export const questionInstruction = (question: Question): string => isPhotoChoiceQuestion(question)
+  ? question.type === 'photo-reveal' ? 'Pick the picture answer early · Less revealed = more points.' : 'Pick the picture answer early · More zoomed-in = more points.'
+  : question.placementMode === 'fastest-correct'
   ? 'Answer correctly and quickly · Earlier correct answers score more.'
   : ({
   single: 'Pick the correct answer · Correct = full points.',

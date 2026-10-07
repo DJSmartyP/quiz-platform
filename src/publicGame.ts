@@ -10,6 +10,7 @@ export function publicGame(source: Game): Game {
     questions: source.questions.map(question => ({
       id: question.id,
       type: question.type,
+      photoAnswerMode: showQuestion && question.id === active?.id ? question.photoAnswerMode : undefined,
       round: question.round,
       points: question.points,
       placementMode: question.placementMode,

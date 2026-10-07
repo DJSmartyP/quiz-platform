@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { HashRouter, Link, NavLink, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowDown, ArrowRight, ArrowUp, Check, CircleHelp, Clock3, Copy, Download, Edit3, ExternalLink, Gamepad2, House, ImagePlus, LayoutDashboard, Maximize2, MonitorPlay, Play, Plus, ShieldCheck, Sparkles, Trash2, Trophy, Upload, Users, Wifi, WifiOff } from 'lucide-react'
-import { anagramDisplay, currentQuestion, currentTheme, gradeFor, isAnswerComplete, normalise, photoTileOrder, quizThemes, ranked, rankedRound, responseFor, roundPoints, sampleQuestions, scrambleWord, typeNames, type Game, type Player, type Question, type QuestionType, type QuizTheme } from './model'
+import { anagramDisplay, currentQuestion, currentTheme, gradeFor, isAnswerComplete, isPhotoChoiceQuestion, normalise, photoTileOrder, quizThemes, ranked, rankedRound, responseFor, roundPoints, sampleQuestions, scrambleWord, typeNames, type Game, type Player, type Question, type QuestionType, type QuizTheme } from './model'
 import { actionLabel, createQuiz, deleteQuiz, duplicateQuiz, expireAnswers, getActiveQuizTemplate, getLiveRole, getQuizLibrarySnapshot, importQuiz, leaveLiveRole, replaceQuizLibrary, scopeQuizWorkspace, selectQuiz, setQuizTheme, update, useGame, useQuizLibrary, type QuizTemplate } from './store'
 import { beginHostPopup, cleanupExpiredSessions, deleteLiveSession, deleteQuizTemplateCloud, followLiveScreen, hasHostSession, joinLiveGame, liveHostCommand, readQuizMedia, reconnectLivePlayer, restoreHostAccount, saveQuizTemplateCloud, signOutHost, startLiveHost, submitLiveAnswer, syncQuizLibrary, takeLiveControl, uploadQuizMedia, type HostAccount } from './live'
 import { answerLabel, type OwnResult } from './reveal'
@@ -112,7 +112,7 @@ async function storeEmbeddedQuestionMedia(question: Question, quizId: string): P
   return next
 }
 function changeQuestionType(question: Question, type: QuestionType): Question {
-  const { options: _options, items: _items, categories: _categories, scramble: _scramble, tolerance: _tolerance, numberBands: _numberBands, placementMode: _placementMode, scoreMode: _scoreMode, explanation: _explanation, ...base } = question
+  const { options: _options, photoAnswerMode: _photoAnswerMode, items: _items, categories: _categories, scramble: _scramble, tolerance: _tolerance, numberBands: _numberBands, placementMode: _placementMode, scoreMode: _scoreMode, explanation: _explanation, ...base } = question
   const next: Question = { ...base, type, placementMode: 'none' }
   if (type === 'single') return { ...next, options: ['Answer A', 'Answer B', 'Answer C', 'Answer D'], answer: 'Answer A' }
   if (type === 'multi') return { ...next, options: ['Answer A', 'Answer B', 'Answer C', 'Answer D'], answer: ['Answer A'] }
@@ -123,6 +123,7 @@ function changeQuestionType(question: Question, type: QuestionType): Question {
   if (type === 'categorise') return { ...next, items: ['Item 1', 'Item 2'], categories: ['Category 1', 'Category 2'], answer: { 'Item 1': 'Category 1', 'Item 2': 'Category 2' } }
   if (type === 'list') return { ...next, answer: ['Answer 1', 'Answer 2', 'Answer 3'] }
   if (type === 'anagram') return { ...next, answer: 'Platypus', scramble: scrambleWord('Platypus') }
+  if (type === 'photo-reveal' || type === 'photo-zoom') return { ...next, answer: '', photoAnswerMode: 'text' }
   return { ...next, answer: '' }
 }
 function validateQuestionDraft(question: Question) {
@@ -164,6 +165,13 @@ function validateQuestionDraft(question: Question) {
   if (question.type === 'anagram' && !String(question.answer || '').trim()) return 'Enter the word or phrase to scramble.'
   if (['photo-reveal', 'photo-zoom'].includes(question.type) && !question.imageUrl) return 'Add an image for this photo question.'
   if (['photo-reveal', 'photo-zoom'].includes(question.type) && !String(question.answer || '').trim()) return 'Enter the correct photo answer.'
+  if (isPhotoChoiceQuestion(question)) {
+    const options = (question.options || []).map(option => option.trim()).filter(Boolean)
+    if (options.length < 2 || options.length !== question.options?.length) return 'Add at least two complete photo answer options.'
+    if (options.length > 4) return 'Use no more than four photo answer options so they fit on the Main Screen.'
+    if (new Set(options.map(option => option.toLocaleLowerCase())).size !== options.length) return 'Photo answer options must be unique.'
+    if (!options.includes(String(question.answer))) return 'Select a correct photo answer from the options.'
+  }
   return ''
 }
 function quizPreflight(title: string, questions: Question[]) {
@@ -374,7 +382,7 @@ function QuestionMediaStage({ game, question }: { game: Game; question: Question
   const visibleTiles = game.phase === 'reveal' ? 24 : Math.floor(progress * 24)
   const scale = game.phase === 'reveal' ? 1 : 3.4 - progress * 2.4
   const revealedTiles = new Set(photoTileOrder(question.id).slice(0, visibleTiles))
-  const mediaStyle = { '--question-image-ratio': imageRatio, ...(isZoom ? { width: 'min(100%, clamp(190px, 36vh, 420px))', height: 'clamp(190px, 36vh, 420px)', maxHeight: 'none', aspectRatio: '1', flex: '0 0 auto' } : {}) } as React.CSSProperties
+  const mediaStyle = { '--question-image-ratio': imageRatio } as React.CSSProperties
   return <div className={`question-media ${isReveal ? 'photo-reveal' : ''} ${isZoom ? 'photo-zoom' : ''}`} style={mediaStyle}>
     <img src={image.url} alt={image.alt} onLoad={event=>{setFailedImage('');setImageRatio(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight || 1)}} onError={()=>setFailedImage(image.url || '')} style={isZoom ? { transform: `scale(${scale})` } : undefined}/>
     {failedImage === image.url && <div className="photo-unavailable" role="alert">Picture could not load. Check the image in XP Studio.</div>}
@@ -389,7 +397,7 @@ function HostAnswerKey({ question }: { question: Question }) {
 }
 
 function AnswerStage({ question, revealed }: { question: Question; revealed: boolean }) {
-  const choices = question.type === 'boolean' ? ['True', 'False'] : ['single', 'multi'].includes(question.type) ? question.options : undefined
+  const choices = question.type === 'boolean' ? ['True', 'False'] : ['single', 'multi'].includes(question.type) || isPhotoChoiceQuestion(question) ? question.options : undefined
   const correct = Array.isArray(question.answer) ? question.answer.map(String) : [answerLabel(question.answer)]
   if (choices?.length) return <div className={`screen-options ${revealed ? 'is-revealed' : ''}`}>{choices.map((choice, index) => {
     const isCorrect = revealed && correct.includes(choice)
@@ -822,7 +830,8 @@ function Editor() {
           </div>
         </details>
         <div className="media-editor"><div className="media-editor-head"><div><strong>Question image</strong><span>Optional for every format; required for photo reveal and zoom.</span></div>{draft.imageUrl&&<button onClick={()=>setDraft({...draft,imageUrl:undefined,imageAlt:undefined})}><Trash2 size={15}/> Remove</button>}</div><label>Image URL<input value={parseQuizMediaRef(draft.imageUrl) || draft.imageUrl?.startsWith('data:') ? '' : draft.imageUrl || ''} placeholder="https://…" onChange={event=>setDraft({...draft,imageUrl:event.target.value})}/></label><label className="image-upload"><ImagePlus size={18}/>{imageBusy?'Uploading image…':'Upload image to quiz'}<input type="file" accept="image/*" disabled={imageBusy} onChange={event=>void chooseImage(event.target.files?.[0])}/></label>{draft.imageUrl&&<div className="media-preview"><QuizMediaImage src={draft.imageUrl} alt={draft.imageAlt || 'Question preview'}/></div>}<label>Image description<input value={draft.imageAlt || ''} onChange={event=>setDraft({...draft,imageAlt:event.target.value})} placeholder="Describe the image for accessibility"/></label><small className="field-help">Uploads are compressed and saved to your private quiz library. Save the question to use the image. You can also paste an HTTPS image URL.</small></div>
-        {draft.options && ['single','multi'].includes(draft.type) && <label>Answer options<div className="option-edit">{draft.options.map((option,index)=><div className="option-edit-row" key={index}><input value={option} onChange={event=>{const options=draft.options?.map((value,itemIndex)=>itemIndex===index?event.target.value:value);const answer=draft.type==='single'&&draft.answer===option?event.target.value:draft.type==='multi'&&Array.isArray(draft.answer)?draft.answer.map(value=>value===option?event.target.value:value):draft.answer;setDraft({...draft,options,answer})}}/><button type="button" aria-label={`Remove option ${index+1}`} disabled={(draft.options?.length||0)<=2} onClick={()=>{const options=draft.options?.filter((_,itemIndex)=>itemIndex!==index);const answer=draft.type==='single'&&draft.answer===option?options?.[0]||'':draft.type==='multi'&&Array.isArray(draft.answer)?draft.answer.filter(value=>value!==option):draft.answer;setDraft({...draft,options,answer})}}><Trash2 size={15}/></button></div>)}<button className="option-add" type="button" onClick={()=>setDraft({...draft,options:[...(draft.options||[]),`Answer ${(draft.options?.length||0)+1}`]})}><Plus size={15}/> Add option</button></div></label>}
+        {['photo-reveal','photo-zoom'].includes(draft.type)&&<label>How should players answer?<select value={draft.photoAnswerMode || 'text'} onChange={event=>{const mode=event.target.value as 'text' | 'choice';const answer=String(draft.answer || '');setDraft(mode==='choice'?{...draft,photoAnswerMode:mode,options:[answer || 'Answer A','Answer B','Answer C','Answer D'],answer:answer || 'Answer A'}:{...draft,photoAnswerMode:mode,options:undefined,answer})}}><option value="text">Type an answer</option><option value="choice">Choose from options</option></select><small className="field-help">Players still score more for an earlier correct answer.</small></label>}
+        {draft.options && (['single','multi'].includes(draft.type) || isPhotoChoiceQuestion(draft)) && <label>Answer options<div className="option-edit">{draft.options.map((option,index)=><div className="option-edit-row" key={index}><input value={option} onChange={event=>{const options=draft.options?.map((value,itemIndex)=>itemIndex===index?event.target.value:value);const answer=(draft.type==='single'||isPhotoChoiceQuestion(draft))&&draft.answer===option?event.target.value:draft.type==='multi'&&Array.isArray(draft.answer)?draft.answer.map(value=>value===option?event.target.value:value):draft.answer;setDraft({...draft,options,answer})}}/><button type="button" aria-label={`Remove option ${index+1}`} disabled={(draft.options?.length||0)<=2} onClick={()=>{const options=draft.options?.filter((_,itemIndex)=>itemIndex!==index);const answer=(draft.type==='single'||isPhotoChoiceQuestion(draft))&&draft.answer===option?options?.[0]||'':draft.type==='multi'&&Array.isArray(draft.answer)?draft.answer.filter(value=>value!==option):draft.answer;setDraft({...draft,options,answer})}}><Trash2 size={15}/></button></div>)}<button className="option-add" type="button" disabled={isPhotoChoiceQuestion(draft) && draft.options.length >= 4} onClick={()=>setDraft({...draft,options:[...(draft.options||[]),`Answer ${(draft.options?.length||0)+1}`]})}><Plus size={15}/> Add option</button></div></label>}
         {draft.type==='single'&&<label>Correct answer<select value={String(draft.answer||'')} onChange={event=>setDraft({...draft,answer:event.target.value})}>{draft.options?.map(option=><option key={option}>{option}</option>)}</select></label>}
         {draft.type==='multi'&&<label>Correct answers<input value={Array.isArray(draft.answer)?draft.answer.join(', '):''} onChange={event=>setDraft({...draft,answer:event.target.value.split(',').map(value=>value.trim()).filter(Boolean)})} placeholder="Answer A, Answer C"/><small className="field-help">Separate correct options with commas.</small></label>}
         {draft.type==='boolean'&&<label>Correct answer<select value={String(Boolean(draft.answer))} onChange={event=>setDraft({...draft,answer:event.target.value==='true'})}><option value="true">True</option><option value="false">False</option></select></label>}
@@ -834,7 +843,7 @@ function Editor() {
         {draft.type==='anagram'&&<label>Word or phrase to scramble<input value={String(draft.answer||'')} onChange={event=>setDraft({...draft,answer:event.target.value})} placeholder="e.g. Platypus"/><small className="field-help">The same jumble is shown to every player. Minimum timer: 10 seconds.</small></label>}
         {draft.type==='text'&&<><label>Correct answer to display<input value={Array.isArray(draft.answer)?draft.answer[0] || '':String(draft.answer || '')} onChange={event=>setDraft({...draft,answer:[event.target.value,...(Array.isArray(draft.answer)?draft.answer.slice(1):[])]})} placeholder="e.g. New York"/><small className="field-help">This is the only correct answer shown to players at reveal. Leave both fields blank to mark every response yourself.</small></label><label>Accepted variants (private)<textarea value={Array.isArray(draft.answer)?draft.answer.slice(1).join('\n'):''} onChange={event=>setDraft({...draft,answer:[Array.isArray(draft.answer)?draft.answer[0] || '':String(draft.answer || ''),...event.target.value.split('\n')]})} placeholder={'NYC\nNew York City'}/><small className="field-help">One variant per line. These also score automatically, but are never sent to players. Other responses go to the Host for verification.</small></label></>}
 
-        {['photo-reveal','photo-zoom'].includes(draft.type)&&<label>Correct answer<input value={String(draft.answer||'')} onChange={event=>setDraft({...draft,answer:event.target.value})} placeholder="Answer players should type"/></label>}
+        {['photo-reveal','photo-zoom'].includes(draft.type)&&(!isPhotoChoiceQuestion(draft)?<label>Correct answer<input value={String(draft.answer||'')} onChange={event=>setDraft({...draft,answer:event.target.value})} placeholder="Answer players should type"/></label>:<label>Correct option<select value={String(draft.answer||'')} onChange={event=>setDraft({...draft,answer:event.target.value})}>{draft.options?.map((option,index)=><option key={index} value={option}>{option}</option>)}</select></label>)}
         <div className="media-editor"><div className="media-editor-head"><div><strong>Answer image (optional)</strong><span>Shown with the answer text when you reveal. Leave blank to keep the question image.</span></div>{draft.answerImageUrl&&<button onClick={()=>setDraft({...draft,answerImageUrl:undefined,answerImageAlt:undefined})}><Trash2 size={15}/> Remove answer image</button>}</div><label>Answer image URL<input value={parseQuizMediaRef(draft.answerImageUrl) || draft.answerImageUrl?.startsWith('data:') ? '' : draft.answerImageUrl || ''} placeholder="https://…" onChange={event=>setDraft({...draft,answerImageUrl:event.target.value.trim()})}/></label><label className="image-upload"><ImagePlus size={18}/>{imageBusy?'Uploading image…':'Upload answer image to quiz'}<input type="file" accept="image/*" disabled={imageBusy} onChange={event=>void chooseImage(event.target.files?.[0],true)}/></label>{draft.answerImageUrl&&<div className="media-preview"><QuizMediaImage src={draft.answerImageUrl} alt={draft.answerImageAlt || 'Answer preview'}/></div>}<label>Answer image description<input value={draft.answerImageAlt || ''} onChange={event=>setDraft({...draft,answerImageAlt:event.target.value})} placeholder="Describe the revealed image for accessibility"/></label><small className="field-help">The answer image stays private until reveal. Uploads are stored separately so you can use dozens of images in one quiz.</small></div>
         <label>Answer explanation (optional)<textarea value={draft.explanation || ''} onChange={event=>setDraft({...draft,explanation:event.target.value})} placeholder="Shown after the answer is revealed."/></label>
         {validation&&<div className="error">{validation}</div>}
@@ -1149,9 +1158,12 @@ function QuestionLayoutPreview() {
   const [previewParams] = useSearchParams()
   const type = questionType as QuestionType
   const baseQuestion = layoutPreviewQuestions[type] || layoutPreviewQuestions.single
-  const q = previewParams.get('media') === '1' && !baseQuestion.imageUrl
+  const previewQuestion = previewParams.get('media') === '1' && !baseQuestion.imageUrl
     ? { ...baseQuestion, prompt: `${baseQuestion.prompt} Use the picture shown below.`, imageUrl: asset('themes/around-britain/background.webp'), imageAlt: 'British landmarks and countryside' }
     : baseQuestion
+  const q = previewParams.get('answer') === 'choice' && ['photo-reveal', 'photo-zoom'].includes(previewQuestion.type)
+    ? { ...previewQuestion, photoAnswerMode: 'choice' as const, options: [String(previewQuestion.answer), 'Option B', 'Option C', 'Option D'] }
+    : previewQuestion
   const themeParam = previewParams.get('theme') as QuizTheme
   const theme = quizThemeIds.includes(themeParam) ? themeParam : 'quiz-show'
   const phaseParam = previewParams.get('phase')
@@ -1282,7 +1294,7 @@ function PlayerWaitPreview() {
   </div>
 }
 function AnswerInput({q,value,setValue,choice}:{q:Question;value:unknown;setValue:(v:unknown)=>void;choice:(v:string)=>void}) {
-  if(q.type==='single'||q.type==='boolean') return <div className="choice-list">{(q.type==='boolean'?['True','False']:q.options||[]).map((o,i)=><button key={o} className={value===(q.type==='boolean'?(o==='True'):o)?'active':''} onClick={()=>setValue(q.type==='boolean'?(o==='True'):o)}><b>{'ABCD'[i]}</b>{o}</button>)}</div>
+  if(q.type==='single'||q.type==='boolean'||isPhotoChoiceQuestion(q)) return <div className="choice-list">{(q.type==='boolean'?['True','False']:q.options||[]).map((o,i)=><button key={o} className={value===(q.type==='boolean'?(o==='True'):o)?'active':''} onClick={()=>setValue(q.type==='boolean'?(o==='True'):o)}><b>{'ABCD'[i]}</b>{o}</button>)}</div>
   if(q.type==='multi') return <div className="choice-list">{q.options?.map((o,i)=><button key={o} className={(value as string[]).includes(o)?'active':''} onClick={()=>choice(o)}><b>{'ABCD'[i]}</b>{o}</button>)}</div>
   if(q.type==='ordering') {const items=q.items||[];const order=Array.isArray(value)?value as string[]:[];return <div><p className="input-help">Tap each item in order.</p><div className="choice-list">{items.map(o=><button key={o} className={order.includes(o)?'active':''} onClick={()=>choice(o)}><b>{order.includes(o)?order.indexOf(o)+1:'+'}</b>{o}</button>)}</div><button className="clear-link" onClick={()=>setValue([])}>Clear order</button></div>}
   if(q.type==='matching'||q.type==='categorise') return <div className="match-list">{q.items?.map(item=><label key={item}>{item}<select value={(value as Record<string,string>)[item]||''} onChange={e=>setValue({...value as object,[item]:e.target.value})}><option value="">Choose…</option>{(q.type==='matching'?q.options:q.categories)?.map(o=><option key={o}>{o}</option>)}</select></label>)}</div>
