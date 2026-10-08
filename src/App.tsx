@@ -615,11 +615,24 @@ function Organiser() {
     <div className="section-title lower"><h2>Workspace tools</h2></div><div className="feature-grid"><Link to="/join" className="feature-card"><div className="feature-icon lilac"><Users size={21}/></div><h3>XP Play Portal</h3><p>The permanent player page people bookmark, scan and use to enter each game code.</p><span>Open XP Play <ArrowRight size={16}/></span></Link><Link to="/screen" className="feature-card"><div className="feature-icon coral"><MonitorPlay size={21}/></div><h3>Screen launcher</h3><p>Enter a live session code to load its presentation on any display.</p><span>Open screen launcher <ArrowRight size={16}/></span></Link><div className="feature-card"><div className="feature-icon mint"><Sparkles size={21}/></div><h3>Avatar collection</h3><p>{packs.reduce((total,pack) => total+pack.avatars.length,0)} characters across {packs.length} avatar packs.</p><span>Available to every player <Check size={16}/></span></div></div>
   </main></Shell>
 }
+function useEditableValue<T>(source: T, context: unknown): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const [edit, setEdit] = useState(() => ({ source, context, value: source }))
+  const value = edit.source === source && edit.context === context ? edit.value : source
+  const setValue: React.Dispatch<React.SetStateAction<T>> = next => setEdit(current => {
+    const previous = current.source === source && current.context === context ? current.value : source
+    return { source, context, value: typeof next === 'function' ? (next as (value: T) => T)(previous) : next }
+  })
+  return [value, setValue]
+}
 function Editor() {
-  const game = useGame(), library = useQuizLibrary(), nav = useNavigate(), [selected, setSelected] = useState(0), [draft, setDraft] = useState(game.questions[0]), [titleDraft, setTitleDraft] = useState(game.title), [themeDraft, setThemeDraft] = useState<QuizTheme>(game.theme || 'quiz-show'), [introThemeDraft, setIntroThemeDraft] = useState<QuizTheme>(game.introTheme || game.theme || 'quiz-show'), [exitThemeDraft, setExitThemeDraft] = useState<QuizTheme>(game.exitTheme || game.theme || 'quiz-show'), [roundThemeDraft, setRoundThemeDraft] = useState<QuizTheme | ''>(game.roundThemes?.[game.questions[0]?.round] || ''), [saved, setSaved] = useState(false), [saving, setSaving] = useState(false), [savedAt, setSavedAt] = useState(''), [validation, setValidation] = useState(''), [preflightIssues, setPreflightIssues] = useState<string[] | null>(null), [imageBusy, setImageBusy] = useState(false)
-  useEffect(() => { setDraft(game.questions[selected] || game.questions[0]); setSaved(false) }, [selected, game.questions])
-  useEffect(() => { setTitleDraft(game.title); setThemeDraft(game.theme || 'quiz-show'); setIntroThemeDraft(game.introTheme || game.theme || 'quiz-show'); setExitThemeDraft(game.exitTheme || game.theme || 'quiz-show') }, [game.title, game.theme, game.introTheme, game.exitTheme])
-  useEffect(() => { setRoundThemeDraft(game.roundThemes?.[game.questions[selected]?.round] || '') }, [selected, game.questions, game.roundThemes])
+  const game = useGame(), library = useQuizLibrary(), nav = useNavigate(), [selected, setSelected] = useState(0), [saved, setSaved] = useState(false), [saving, setSaving] = useState(false), [savedAt, setSavedAt] = useState(''), [validation, setValidation] = useState(''), [preflightIssues, setPreflightIssues] = useState<string[] | null>(null), [imageBusy, setImageBusy] = useState(false)
+  const [draft, setDraft] = useEditableValue(game.questions[selected] || game.questions[0], game.questions[selected]?.id)
+  const [titleDraft, setTitleDraft] = useEditableValue(game.title, library.activeQuizId)
+  const [themeDraft, setThemeDraft] = useEditableValue<QuizTheme>(game.theme || 'quiz-show', library.activeQuizId)
+  const [introThemeDraft, setIntroThemeDraft] = useEditableValue<QuizTheme>(game.introTheme || game.theme || 'quiz-show', library.activeQuizId)
+  const [exitThemeDraft, setExitThemeDraft] = useEditableValue<QuizTheme>(game.exitTheme || game.theme || 'quiz-show', library.activeQuizId)
+  const [roundThemeDraft, setRoundThemeDraft] = useEditableValue<QuizTheme | ''>(game.roundThemes?.[game.questions[selected]?.round] || '', game.questions[selected]?.id)
+  const selectQuestion = (index: number) => { setSelected(index); setSaved(false) }
   const activeTemplate = library.quizzes.find(quiz => quiz.id === library.activeQuizId)
   const copyStarter = async () => {
     if (!activeTemplate) return
@@ -678,7 +691,7 @@ function Editor() {
       gameDraft.roundThemes = roundThemes
       })
       savedLocally = true
-      if (nextSelected !== selected) setSelected(nextSelected)
+      if (nextSelected !== selected) selectQuestion(nextSelected)
       const template = getActiveQuizTemplate()
       if (template) await saveQuizTemplateCloud(template)
       setValidation('')
@@ -694,7 +707,7 @@ function Editor() {
     if (isDirty) { setValidation('Save the current question before duplicating it.'); return }
     const nextIndex = selected + 1
     update(gameDraft => { gameDraft.questions.splice(nextIndex, 0, { ...structuredClone(draft), id: crypto.randomUUID(), prompt: 'New question' }) })
-    setSelected(nextIndex)
+    selectQuestion(nextIndex)
     void syncStructure('Question duplicated.')
   }
   const addQuestion = (targetRound = originalRound) => {
@@ -702,7 +715,7 @@ function Editor() {
     const question: Question = { id: crypto.randomUUID(), round: targetRound, type: 'single', prompt: 'New question', options: ['Answer A', 'Answer B', 'Answer C', 'Answer D'], answer: 'Answer A', points: 1000, placementMode: 'none', duration: 30 }
     let nextIndex = game.questions.length
     update(gameDraft => { const inserted = insertInRound(gameDraft.questions, question); gameDraft.questions = inserted.questions; nextIndex = inserted.index })
-    setSelected(nextIndex)
+    selectQuestion(nextIndex)
     void syncStructure(`Question added to ${targetRound}.`)
   }
   const createRound = () => {
@@ -717,7 +730,7 @@ function Editor() {
     if (isDirty) { setValidation('Save the current question before deleting it.'); return }
     if (game.questions.length <= 1 || !confirm('Delete this question from the quiz?')) return
     update(gameDraft => { gameDraft.questions.splice(selected, 1); gameDraft.questionIndex = Math.min(gameDraft.questionIndex, gameDraft.questions.length - 1) })
-    setSelected(Math.max(0, selected - 1))
+    selectQuestion(Math.max(0, selected - 1))
     void syncStructure('Question deleted.')
   }
   const renameRound = () => {
@@ -741,7 +754,7 @@ function Editor() {
     const nextIndex = selected + direction
     if (nextIndex < 0 || nextIndex >= game.questions.length || game.questions[nextIndex].round !== originalRound) return
     update(gameDraft => { [gameDraft.questions[selected], gameDraft.questions[nextIndex]] = [gameDraft.questions[nextIndex], gameDraft.questions[selected]] })
-    setSelected(nextIndex)
+    selectQuestion(nextIndex)
     void syncStructure('Question order saved.')
   }
   const reorderRound = (round: string, direction: -1 | 1) => {
@@ -754,7 +767,7 @@ function Editor() {
       gameDraft.questions = moveRound(gameDraft.questions, round, direction)
       nextSelected = gameDraft.questions.findIndex(question => question.id === selectedId)
     })
-    setSelected(nextSelected)
+    selectQuestion(nextSelected)
     void syncStructure('Round order saved.')
   }
   const chooseImage = async (file?: File, answerImage = false) => {
@@ -784,7 +797,7 @@ function Editor() {
       gameDraft.questions.splice(insertAt, 0, ...copies)
       if (gameDraft.roundThemes?.[originalRound]) gameDraft.roundThemes[nextName] = gameDraft.roundThemes[originalRound]
     })
-    setSelected(insertAt)
+    selectQuestion(insertAt)
     try {
       const template = getActiveQuizTemplate()
       if (template) await saveQuizTemplateCloud(template)
@@ -810,7 +823,7 @@ function Editor() {
             <button type="button" aria-label={`Add question to ${round}`} title={`Add question to ${round}`} onClick={() => addQuestion(round)}><Plus size={17}/></button>
           </div>
         </div>
-        {game.questions.map((question,index) => question.round === round ? <button key={question.id} className={`question-row ${selected===index?'chosen':''}`} onClick={() => { if (isDirty) { setValidation('Save the current question before selecting another.'); return } setSelected(index) }}><span className="question-number">{String(index+1).padStart(2,'0')}</span><span><strong>{question.prompt}</strong><small>{typeNames[question.type]}</small></span></button> : null)}
+        {game.questions.map((question,index) => question.round === round ? <button key={question.id} className={`question-row ${selected===index?'chosen':''}`} onClick={() => { if (isDirty) { setValidation('Save the current question before selecting another.'); return } selectQuestion(index) }}><span className="question-number">{String(index+1).padStart(2,'0')}</span><span><strong>{question.prompt}</strong><small>{typeNames[question.type]}</small></span></button> : null)}
       </section>)}</div>
       <div className="editor-form">
         <div className="form-top"><div><Badge>{draft.round}</Badge><h2>Question {selected+1}</h2></div><Badge tone="gray">{scoringSummary(draft)}</Badge></div>
@@ -1057,15 +1070,17 @@ function MainScreen({ previewGame }: { previewGame?: Game } = {}) {
   const nav = useNavigate()
   const slideRef = useRef<HTMLDivElement>(null)
   const [enteredCode, setEnteredCode] = useState('')
-  const [connectionError, setConnectionError] = useState('')
-  const [connectedCode, setConnectedCode] = useState('')
+  const [connection, setConnection] = useState({ code: '', error: '', connected: false })
+  const connectionError = connection.code === code ? connection.error : ''
+  const connectedCode = connection.connected ? connection.code : ''
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement))
   useEffect(() => {
     if (!code) return
-    setConnectionError('')
-    setConnectedCode('')
-    const stop = followLiveScreen(code, setConnectionError, () => setConnectedCode(code))
-    return () => { stop(); leaveLiveRole('screen') }
+    let active = true
+    const stop = followLiveScreen(code,
+      error => { if (active) setConnection(current => ({ code, error, connected: current.code === code && current.connected })) },
+      () => { if (active) setConnection({ code, error: '', connected: true }) })
+    return () => { active = false; stop(); leaveLiveRole('screen') }
   }, [code])
   const storedGame=useGame(), game=previewGame || storedGame, packs=usePacks(), q=currentQuestion(game), liveTheme=currentTheme(game)
   const sceneCopy = quizThemes[liveTheme][game.phase === 'break' ? 'break' : 'finale']
