@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { questionInstruction, roundScore, scoreQuestion, scoringSummary } from '../src/scoring.ts'
+import { questionInstruction, reviewMaximumPoints, roundScore, scoreQuestion, scoringSummary } from '../src/scoring.ts'
 
 const base = (type, answer, extras = {}) => ({ id: `q-${type}`, round: 'Round', type, prompt: 'Question', answer, points: 1000, duration: 30, ...extras })
 const reply = (question, playerId, value, submittedAt = 1000, submittedAtServer) => ({ playerId, questionId: question.id, value, submittedAt, submittedAtServer })
@@ -92,6 +92,22 @@ test('text answers auto-mark accepted wording and queue other wording for Host v
   assert.match(review.detail, /Host verification/)
   const manual = { playerId: 'review', questionId: question.id, points: 1000, committed: false, verdict: 'correct', detail: 'Host awarded full credit', source: 'override' }
   assert.deepEqual(scoreQuestion(question, [reply(question, 'review', 'Auld Reekie')], ['review'], { existingGrades: [manual] })[0], manual)
+})
+
+test('written photo answers use text verification and preserve timed credit when the Host accepts a variant', () => {
+  for (const type of ['photo-reveal', 'photo-zoom']) {
+    const question = base(type, ['London Eye', 'The London Eye'])
+    const accepted = reply(question, 'accepted', 'the london eye', 15000)
+    const review = reply(question, 'review', 'Millennium Wheel', 15000)
+    assert.equal(scoreQuestion(question, [accepted], ['accepted'], { openedAt: 0 })[0].points, 600)
+    assert.equal(scoreQuestion(question, [review], ['review'], { openedAt: 0 })[0].verdict, 'pending')
+    assert.equal(reviewMaximumPoints(question, review, 0), 600)
+    const manual = { playerId: 'review', questionId: question.id, points: 600, committed: false, verdict: 'correct', detail: 'Host awarded full credit', source: 'manual' }
+    assert.deepEqual(scoreQuestion(question, [review], ['review'], { openedAt: 0, existingGrades: [manual] })[0], manual)
+  }
+  const choice = base('photo-reveal', 'London Eye', { photoAnswerMode: 'choice', options: ['London Eye', 'Big Ben'] })
+  assert.equal(reviewMaximumPoints(choice, reply(choice, 'wrong', 'Big Ben', 15000), 0), 1000)
+  assert.equal(scoreQuestion(choice, [reply(choice, 'wrong', 'Big Ben')], ['wrong'])[0].verdict, 'incorrect')
 })
 
 test('legacy free responses migrate to the combined written-answer type', async () => {

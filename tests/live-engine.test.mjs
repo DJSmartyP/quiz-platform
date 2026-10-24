@@ -54,6 +54,22 @@ test('finalising a question creates one committed grade per Player and a later r
   assert.equal(game.grades.filter(g => g.committed).length, 4)
 })
 
+test('Host-reviewed photo wording survives reveal and commits timed points once', () => {
+  let game = base()
+  game.questions[0] = { ...game.questions[0], type: 'photo-reveal', answer: ['London Eye', 'Millennium Wheel'] }
+  game.phase = 'closed'
+  game.openedAt = 0
+  game.questionEligiblePlayerIds = ['a', 'b']
+  game.responses = [{ playerId: 'a', questionId: 'q1', value: 'The big wheel', submittedAt: 15000 }]
+  game.grades = [{ playerId: 'a', questionId: 'q1', points: 600, committed: false, verdict: 'correct', detail: 'Host awarded full credit', source: 'manual' }]
+  game = advanceGame(game)
+  assert.equal(game.grades.find(grade => grade.playerId === 'a').points, 600)
+  assert.equal(game.grades.find(grade => grade.playerId === 'a').verdict, 'correct')
+  game = advanceGame(game)
+  assert.equal(game.players.find(item => item.id === 'a').score, 600)
+  assert.equal(game.grades.filter(grade => grade.playerId === 'a' && grade.committed).length, 1)
+})
+
 test('break and resume are state driven and versioned', () => {
   const game = { ...base(), phase: 'round-scores' }
   const paused = breakGame(game)

@@ -5,7 +5,7 @@ import { advanceGame, breakGame, extendAnswerTime, resumeGame, setLateJoining } 
 import { currentQuestion, isLastQuestionInRound, scrambleWord, type Game, type Player, type Response } from './model'
 import { publicGame } from './publicGame'
 import { resultForGrade, type OwnResult } from './reveal'
-import { normaliseQuestion, roundScore } from './scoring'
+import { isWrittenAnswerQuestion, normaliseQuestion, reviewMaximumPoints, roundScore } from './scoring'
 import { getGame, receiveLiveGame, receiveOwnLiveResponse, type QuizTemplate } from './store'
 import { parseQuizMediaRef, quizMediaRef, withPublishedMedia } from './quizMedia'
 
@@ -651,10 +651,12 @@ export async function liveHostCommand(expectedVersion: number, command: HostComm
     else if (command.type === 'grade' && command.playerId) {
       next = structuredClone(base)
       const question = currentQuestion(next)
-      if (!responses.some(response => response.playerId === command.playerId && response.questionId === questionId)) throw new Error('That Player answer is no longer available to mark.')
-      const points = Math.min(roundScore(question.points), roundScore(Number(command.points) || 0))
+      const response = responses.find(item => item.playerId === command.playerId && item.questionId === questionId)
+      if (!response) throw new Error('That Player answer is no longer available to mark.')
+      const maximum = reviewMaximumPoints(question, response, base.openedAt)
+      const points = Math.max(0, Math.min(maximum, roundScore(Number(command.points) || 0)))
       next.grades = next.grades.filter(g => !(g.playerId === command.playerId && g.questionId === questionId))
-      next.grades.push({ playerId: command.playerId, questionId, points, committed: false, verdict: points >= question.points ? 'correct' : points > 0 ? 'partial' : 'incorrect', detail: points >= question.points ? 'Host awarded full credit' : points > 0 ? 'Host awarded partial credit' : 'Host awarded no credit', source: question.type === 'text' ? 'manual' : 'override' })
+      next.grades.push({ playerId: command.playerId, questionId, points, committed: false, verdict: points >= maximum && maximum > 0 ? 'correct' : points > 0 ? 'partial' : 'incorrect', detail: points >= maximum && maximum > 0 ? 'Host awarded full credit' : points > 0 ? 'Host awarded partial credit' : 'Host awarded no credit', source: isWrittenAnswerQuestion(question) ? 'manual' : 'override' })
       next.stateVersion += 1
     } else if (command.type === 'grade-all-zero') {
       next = structuredClone(base)

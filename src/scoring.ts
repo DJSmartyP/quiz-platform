@@ -18,11 +18,18 @@ export function normaliseQuestion(question: Question | LegacyQuestion): Question
   const numberBands = clean.type === 'number'
     ? normaliseNumberBands(clean.numberBands?.length ? clean.numberBands : [{ tolerance: Math.max(0, Number(clean.tolerance) || 0), fraction: 1 }])
     : undefined
-  const answer = clean.type === 'text' && Array.isArray(clean.answer)
+  const answer = isWrittenAnswerQuestion(clean) && clean.type !== 'anagram' && Array.isArray(clean.answer)
     ? clean.answer.map(value => value.trim()).filter(Boolean)
     : clean.answer
   return { ...clean, answer, points, duration, placementMode, numberBands }
 }
+
+export const isWrittenAnswerQuestion = (question: Question) =>
+  question.type === 'text' || question.type === 'anagram' ||
+  ((question.type === 'photo-reveal' || question.type === 'photo-zoom') && !isPhotoChoiceQuestion(question))
+
+export const primaryAnswer = (question: Question) => Array.isArray(question.answer) && isWrittenAnswerQuestion(question)
+  ? question.answer[0] || '' : question.answer
 
 export function normaliseNumberBands(bands: Question['numberBands']) {
   const byTolerance = new Map<number, number>()
@@ -56,14 +63,15 @@ export const questionInstruction = (question: Question): string => isPhotoChoice
   categorise: 'Sort every item · Each correctly placed item earns points.',
   list: 'Find as many answers as you can · Each unique correct answer earns points.',
   anagram: 'Unscramble it early · Fewer revealed letters = more points.',
-  'photo-reveal': 'Name the picture early · Less revealed = more points.',
-  'photo-zoom': 'Name the picture early · More zoomed-in = more points.',
+  'photo-reveal': 'Name the picture early · Less revealed = more points. The Host checks other wording.',
+  'photo-zoom': 'Name the picture early · More zoomed-in = more points. The Host checks other wording.',
 }[question.type])
 
 export function scoringSummary(question: Question): string {
   const maximum = `${roundScore(question.points).toLocaleString()} max`
   if (question.placementMode === 'fastest-correct') return `${maximum} · Fastest correct`
   if (question.type === 'text') return `${maximum} · Auto match + Host verification`
+  if ((question.type === 'photo-reveal' || question.type === 'photo-zoom') && !isPhotoChoiceQuestion(question)) return `${maximum} · Earlier solve + Host verification`
   if (question.type === 'closest') return `${maximum} · Closest position`
   if (['anagram', 'photo-reveal', 'photo-zoom'].includes(question.type)) return `${maximum} · Earlier solve scores more`
   if (['multi', 'number', 'ordering', 'matching', 'categorise', 'list'].includes(question.type)) return `${maximum} · Partial credit available`
@@ -128,6 +136,15 @@ export function progressiveRevealProgress(question: Question, response: Response
     return { progress: visible / 24, visible, total: 24, hidden: 24 - visible }
   }
   return { progress: elapsed / duration }
+}
+
+export function progressiveAnswerPoints(question: Question, response: Response, openedAt?: number) {
+  return roundScore(roundScore(question.points) * (1 - 0.8 * progressiveRevealProgress(question, response, openedAt).progress))
+}
+
+export function reviewMaximumPoints(question: Question, response: Response, openedAt?: number) {
+  return ['anagram', 'photo-reveal', 'photo-zoom'].includes(question.type) && isWrittenAnswerQuestion(question)
+    ? progressiveAnswerPoints(question, response, openedAt) : roundScore(question.points)
 }
 
 function automaticGrade(question: Question, response: Response | undefined, openedAt?: number): Grade {
@@ -199,10 +216,12 @@ function automaticGrade(question: Question, response: Response | undefined, open
   }
   if (question.type === 'anagram' || question.type === 'photo-reveal' || question.type === 'photo-zoom') {
     const correct = answerMatches(question, value)
-    if (!correct) return { ...common, points: 0, verdict: 'incorrect', detail: 'Incorrect answer' }
+    if (!correct) return isWrittenAnswerQuestion(question)
+      ? { ...common, points: 0, verdict: 'pending', detail: 'Needs Host verification' }
+      : { ...common, points: 0, verdict: 'incorrect', detail: 'Incorrect answer' }
     const reveal = progressiveRevealProgress(question, response, openedAt)
     const fraction = 1 - 0.8 * reveal.progress
-    const points = roundScore(maximum * fraction)
+    const points = progressiveAnswerPoints(question, response, openedAt)
     const detail = question.type === 'anagram'
       ? `Solved with ${reveal.hidden || 0} letters still hidden`
       : `Solved at ${Math.round(reveal.progress * 100)}% revealed`

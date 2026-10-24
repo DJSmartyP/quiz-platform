@@ -53,6 +53,15 @@ test('written answers score private variants while revealing only the primary wo
   assert.deepEqual(question.answer, ['New York', 'New York City', 'NYC'])
 })
 
+test('photo text variants stay private until reveal, when only the display answer is released', () => {
+  const game = freshGame()
+  const question = normaliseQuestion({ ...game.questions[0], type: 'photo-zoom', photoAnswerMode: 'text', answer: [' London Eye ', ' Millennium Wheel ', ''] })
+  game.questions = [question]
+  assert.deepEqual(question.answer, ['London Eye', 'Millennium Wheel'])
+  assert.equal(publicGame({ ...game, phase: 'open' }).questions[0].answer, undefined)
+  assert.equal(publicGame({ ...game, phase: 'reveal' }).questions[0].answer, 'London Eye')
+})
+
 test('anagrams shuffle across word boundaries while preserving punctuation and the letter inventory', t => {
   t.mock.method(Math, 'random', () => 0)
   assert.equal(scrambleWord('A B'), 'B A')

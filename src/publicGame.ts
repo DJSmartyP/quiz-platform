@@ -1,4 +1,5 @@
 import { currentQuestion, type Game } from './model.ts'
+import { primaryAnswer } from './scoring.ts'
 
 /** Data safe for the presentation screen and every Player before/after reveal. */
 export function publicGame(source: Game): Game {
@@ -30,7 +31,7 @@ export function publicGame(source: Game): Game {
       answerImageUrl: releasedAnswer && question.id === active?.id ? question.answerImageUrl : undefined,
       answerImageAlt: releasedAnswer && question.id === active?.id ? question.answerImageAlt : undefined,
       answer: releasedAnswer && question.id === active?.id
-        ? question.type === 'text' && Array.isArray(question.answer) ? question.answer[0] : question.answer
+        ? primaryAnswer(question)
         : undefined,
       explanation: releasedAnswer && question.id === active?.id ? question.explanation : undefined,
     })),
