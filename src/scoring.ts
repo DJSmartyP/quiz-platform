@@ -128,6 +128,11 @@ function ordinal(rank: number) {
 }
 
 export type RevealProgress = { progress: number; visible?: number; total?: number; hidden?: number }
+/** Finish the photo animation before the answer window closes. */
+export function photoAnimationProgress(question: Question, elapsedSeconds: number): number {
+  const animationSeconds = Math.max(0, (question.duration || 30) - 5)
+  return animationSeconds === 0 ? 1 : clamp(elapsedSeconds / animationSeconds)
+}
 export function progressiveRevealProgress(question: Question, response: Response, openedAt?: number): RevealProgress {
   const duration = Math.max(1, question.duration || 30)
   const elapsed = clamp((submittedMillis(response) - (openedAt ?? submittedMillis(response))) / 1000, 0, duration)
@@ -137,9 +142,10 @@ export function progressiveRevealProgress(question: Question, response: Response
     return { progress: display.positions.length ? display.lockedCount / display.positions.length : 1, visible: display.lockedCount, total: display.positions.length, hidden: display.positions.length - display.lockedCount }
   }
   if (question.type === 'photo-reveal') {
-    const visible = Math.floor(elapsed / duration * 24)
+    const visible = Math.floor(photoAnimationProgress(question, elapsed) * 24)
     return { progress: visible / 24, visible, total: 24, hidden: 24 - visible }
   }
+  if (question.type === 'photo-zoom') return { progress: photoAnimationProgress(question, elapsed) }
   return { progress: elapsed / duration }
 }
 

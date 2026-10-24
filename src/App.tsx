@@ -8,7 +8,7 @@ import { answerLabel, type OwnResult } from './reveal'
 import { presentationImage, questionMediaSize } from './questionMedia'
 import QRCode from 'qrcode'
 import AdminDashboard from './AdminDashboard'
-import { answerMatches, isWrittenAnswerQuestion, normaliseQuestion, normaliseTypedAnswer, primaryAnswer, questionInstruction, reviewMaximumPoints, roundScore, scoringSummary } from './scoring'
+import { answerMatches, isWrittenAnswerQuestion, normaliseQuestion, normaliseTypedAnswer, photoAnimationProgress, primaryAnswer, questionInstruction, reviewMaximumPoints, roundScore, scoringSummary } from './scoring'
 import { parseQuizMediaRef } from './quizMedia'
 import { insertInRound, moveRound, moveToRound, roundNames as getRoundNames } from './rounds'
 import './App.css'
@@ -376,9 +376,9 @@ function QuestionMediaStage({ game, question }: { game: Game; question: Question
   if (!image.url) return ['photo-reveal', 'photo-zoom'].includes(question.type) ? <div className="question-media photo-unavailable" role="status">Preparing picture…</div> : null
   const at = game.phase === 'closed' ? game.closedAt || now : now
   const elapsed = ['open', 'closed'].includes(game.phase) ? Math.max(0, at - (game.openedAt || at)) : 0
-  const progress = game.phase === 'reveal' ? 1 : Math.min(1, elapsed / ((question.duration || 30) * 1000))
   const isReveal = question.type === 'photo-reveal'
   const isZoom = question.type === 'photo-zoom'
+  const progress = game.phase === 'reveal' ? 1 : (isReveal || isZoom ? photoAnimationProgress(question, elapsed / 1000) : Math.min(1, elapsed / ((question.duration || 30) * 1000)))
   const visibleTiles = game.phase === 'reveal' ? 24 : Math.floor(progress * 24)
   const scale = game.phase === 'reveal' ? 1 : 3.4 - progress * 2.4
   const revealedTiles = new Set(photoTileOrder(question.id).slice(0, visibleTiles))
@@ -387,7 +387,7 @@ function QuestionMediaStage({ game, question }: { game: Game; question: Question
     <img src={image.url} alt={image.alt} onLoad={event=>{setFailedImage('');setImageRatio(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight || 1)}} onError={()=>setFailedImage(image.url || '')} style={isZoom ? { transform: `scale(${scale})` } : undefined}/>
     {failedImage === image.url && <div className="photo-unavailable" role="alert">Picture could not load. Check the image in XP Studio.</div>}
     {isReveal && <div className="photo-cover" aria-hidden="true">{Array.from({ length: 24 }, (_, index) => <i key={index} className={revealedTiles.has(index) ? 'gone' : ''}/>)}</div>}
-    {(isReveal || isZoom) && game.phase !== 'reveal' && <span className="photo-progress">{isReveal ? `${visibleTiles} / 24 panels revealed` : 'The picture is zooming out'}</span>}
+    {(isReveal || isZoom) && game.phase !== 'reveal' && <span className="photo-progress">{progress >= 1 ? 'Full picture — answer now' : isReveal ? `${visibleTiles} / 24 panels revealed` : 'The picture is zooming out'}</span>}
   </div>
 }
 

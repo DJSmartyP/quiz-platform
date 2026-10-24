@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { normaliseTypedAnswer, questionInstruction, reviewMaximumPoints, roundScore, scoreQuestion, scoringSummary } from '../src/scoring.ts'
+import { normaliseTypedAnswer, photoAnimationProgress, progressiveRevealProgress, questionInstruction, reviewMaximumPoints, roundScore, scoreQuestion, scoringSummary } from '../src/scoring.ts'
 
 const base = (type, answer, extras = {}) => ({ id: `q-${type}`, round: 'Round', type, prompt: 'Question', answer, points: 1000, duration: 30, ...extras })
 const reply = (question, playerId, value, submittedAt = 1000, submittedAtServer) => ({ playerId, questionId: question.id, value, submittedAt, submittedAtServer })
@@ -56,8 +56,15 @@ test('progressive questions score visible help and never fall below twenty perce
 
   const reveal = base('photo-reveal', 'Duck')
   const zoom = base('photo-zoom', 'Duck')
-  assert.equal(scoreQuestion(reveal, [reply(reveal, 'p', 'duck', 15000)], ['p'], { openedAt: 0 })[0].points, 600)
-  assert.equal(scoreQuestion(zoom, [reply(zoom, 'p', 'duck', 15000)], ['p'], { openedAt: 0 })[0].points, 600)
+  assert.equal(scoreQuestion(reveal, [reply(reveal, 'p', 'duck', 15000)], ['p'], { openedAt: 0 })[0].points, 530)
+  assert.equal(scoreQuestion(zoom, [reply(zoom, 'p', 'duck', 15000)], ['p'], { openedAt: 0 })[0].points, 520)
+  for (const question of [reveal, zoom]) {
+    assert.ok(photoAnimationProgress(question, 24.9) < 1)
+    assert.equal(photoAnimationProgress(question, 25), 1)
+    assert.equal(scoreQuestion(question, [reply(question, 'p', 'duck', 29000)], ['p'], { openedAt: 0 })[0].points, 200)
+  }
+  assert.equal(progressiveRevealProgress(reveal, reply(reveal, 'p', 'duck', 25000), 0).visible, 24)
+  assert.equal(photoAnimationProgress(base('photo-zoom', 'Duck', { duration: 5 }), 0), 1)
 })
 
 test('fastest correct uses authoritative server order, correct-only denominator and shared ties', () => {
@@ -115,10 +122,11 @@ test('written photo answers use text verification and preserve timed credit when
     const question = base(type, ['London Eye', 'The London Eye'])
     const accepted = reply(question, 'accepted', 'the london eye', 15000)
     const review = reply(question, 'review', 'Millennium Wheel', 15000)
-    assert.equal(scoreQuestion(question, [accepted], ['accepted'], { openedAt: 0 })[0].points, 600)
+    const timedPoints = type === 'photo-reveal' ? 530 : 520
+    assert.equal(scoreQuestion(question, [accepted], ['accepted'], { openedAt: 0 })[0].points, timedPoints)
     assert.equal(scoreQuestion(question, [review], ['review'], { openedAt: 0 })[0].verdict, 'pending')
-    assert.equal(reviewMaximumPoints(question, review, 0), 600)
-    const manual = { playerId: 'review', questionId: question.id, points: 600, committed: false, verdict: 'correct', detail: 'Host awarded full credit', source: 'manual' }
+    assert.equal(reviewMaximumPoints(question, review, 0), timedPoints)
+    const manual = { playerId: 'review', questionId: question.id, points: timedPoints, committed: false, verdict: 'correct', detail: 'Host awarded full credit', source: 'manual' }
     assert.deepEqual(scoreQuestion(question, [review], ['review'], { openedAt: 0, existingGrades: [manual] })[0], manual)
   }
   const choice = base('photo-reveal', 'London Eye', { photoAnswerMode: 'choice', options: ['London Eye', 'Big Ben'] })
