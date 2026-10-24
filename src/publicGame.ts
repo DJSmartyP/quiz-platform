@@ -1,5 +1,5 @@
 import { currentQuestion, type Game } from './model.ts'
-import { primaryAnswer } from './scoring.ts'
+import { primaryAnswer, suggestedNumberMaxDistance } from './scoring.ts'
 
 /** Data safe for the presentation screen and every Player before/after reveal. */
 export function publicGame(source: Game): Game {
@@ -15,7 +15,7 @@ export function publicGame(source: Game): Game {
       round: question.round,
       points: question.points,
       placementMode: question.placementMode,
-      numberBands: question.numberBands,
+      numberMaxDistance: question.type === 'number' ? suggestedNumberMaxDistance(question) : undefined,
       duration: question.duration || 30,
       prompt: showQuestion && question.id === active?.id ? question.prompt : '',
       options: showQuestion && question.id === active?.id ? question.options : undefined,

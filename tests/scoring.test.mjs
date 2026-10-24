@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { normaliseTypedAnswer, photoAnimationProgress, progressiveRevealProgress, questionInstruction, reviewMaximumPoints, roundScore, scoreQuestion, scoringSummary } from '../src/scoring.ts'
+import { normaliseQuestion, normaliseTypedAnswer, photoAnimationProgress, progressiveRevealProgress, questionInstruction, reviewMaximumPoints, roundScore, scoreQuestion, scoringSummary, suggestedNumberMaxDistance } from '../src/scoring.ts'
 
 const base = (type, answer, extras = {}) => ({ id: `q-${type}`, round: 'Round', type, prompt: 'Question', answer, points: 1000, duration: 30, ...extras })
 const reply = (question, playerId, value, submittedAt = 1000, submittedAtServer) => ({ playerId, questionId: question.id, value, submittedAt, submittedAtServer })
@@ -19,11 +19,32 @@ test('scores binary, partial multi-select and unanswered players', () => {
   assert.equal(multiGrades.all.points, 0)
 })
 
-test('number bands choose the highest qualifying band and round to tens', () => {
+test('older number bands migrate to one acceptable scoring range', () => {
   const question = base('number', 100, { numberBands: [{ tolerance: 1, fraction: 1 }, { tolerance: 3, fraction: .75 }, { tolerance: 5, fraction: .5 }] })
   const grades = byPlayer(scoreQuestion(question, [reply(question, 'exact', 100), reply(question, 'near', 103), reply(question, 'wide', 95), reply(question, 'miss', 106)], ['exact', 'near', 'wide', 'miss']))
-  assert.deepEqual([grades.exact.points, grades.near.points, grades.wide.points, grades.miss.points], [1000, 750, 500, 0])
+  assert.deepEqual([grades.exact.points, grades.near.points, grades.wide.points, grades.miss.points], [1000, 400, 0, 0])
+  assert.equal(normaliseQuestion(question).numberMaxDistance, 5)
+  assert.equal(normaliseQuestion(question).numberBands, undefined)
   assert.equal(roundScore(666.6), 670)
+})
+
+test('automatic number scoring uses distance within the Host acceptable range, independent of answer speed', () => {
+  const question = base('number', 13003, { numberMaxDistance: 5000 })
+  const grades = byPlayer(scoreQuestion(question, [
+    reply(question, 'exact', 13003, 29000),
+    reply(question, 'halfway', 10503, 1000),
+    reply(question, 'near', 14003, 20000),
+    reply(question, 'just-inside', 18002, 29000),
+    reply(question, 'edge', 8003, 1000),
+    reply(question, 'outside', 18004, 1000),
+  ], ['exact', 'halfway', 'near', 'just-inside', 'edge', 'outside']))
+  assert.deepEqual([grades.exact.points, grades.halfway.points, grades.near.points, grades['just-inside'].points, grades.edge.points, grades.outside.points], [1000, 500, 800, 10, 0, 0])
+  assert.equal(scoreQuestion(question, [reply(question, 'late', 10503, 29000)], ['late'])[0].points, 500)
+  assert.match(questionInstruction(question), /5,000/)
+  assert.match(scoringSummary(question), /Proportional accuracy/)
+  const legacy = base('number', 13003, { numberBands: [{ tolerance: 0, fraction: 1 }, { tolerance: 13000, fraction: .2 }] })
+  assert.equal(suggestedNumberMaxDistance(legacy), 13000)
+  assert.equal(scoreQuestion(legacy, [reply(legacy, 'p', 8003)], ['p'])[0].points, 620)
 })
 
 test('closest awards every valid answer by competition rank including ties', () => {

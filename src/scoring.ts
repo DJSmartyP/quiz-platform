@@ -10,18 +10,23 @@ export function normaliseQuestion(question: Question | LegacyQuestion): Question
   const migrated: Question = raw.type === 'free'
     ? { ...raw, type: 'text', answer: Array.isArray(raw.answer) ? raw.answer : String(raw.answer || '').trim() ? [String(raw.answer).trim()] : [] }
     : raw as Question
-  const { scoreMode: _legacyScoreMode, ...clean } = migrated
+  const { scoreMode: _legacyScoreMode, numberBands: _legacyNumberBands, numberScoringMode: _legacyNumberScoringMode, ...clean } = migrated
   const points = Math.max(0, Math.round(Number(clean.points) || 0))
   const duration = Math.max(1, Math.round(Number(clean.duration) || 30))
   const placementMode = ['single', 'boolean', 'text'].includes(clean.type) && clean.placementMode === 'fastest-correct'
     ? 'fastest-correct' as const : 'none' as const
-  const numberBands = clean.type === 'number'
-    ? normaliseNumberBands(clean.numberBands?.length ? clean.numberBands : [{ tolerance: Math.max(0, Number(clean.tolerance) || 0), fraction: 1 }])
-    : undefined
+  const numberMaxDistance = clean.type === 'number' ? suggestedNumberMaxDistance(migrated) : undefined
   const answer = isWrittenAnswerQuestion(clean) && clean.type !== 'anagram' && Array.isArray(clean.answer)
     ? clean.answer.map(value => value.trim()).filter(Boolean)
     : clean.answer
-  return { ...clean, answer, points, duration, placementMode, numberBands }
+  return { ...clean, answer, points, duration, placementMode, numberMaxDistance }
+}
+
+export function suggestedNumberMaxDistance(question: Question): number {
+  const explicit = Number(question.numberMaxDistance)
+  if (Number.isFinite(explicit) && explicit > 0) return explicit
+  const widestBand = Math.max(0, ...(question.numberBands || []).map(band => Number(band.tolerance) || 0), Number(question.tolerance) || 0)
+  return widestBand > 0 ? widestBand : 100
 }
 
 export const isWrittenAnswerQuestion = (question: Question) =>
@@ -34,22 +39,6 @@ export const primaryAnswer = (question: Question) => Array.isArray(question.answ
 /** Compare typed wording without making players reproduce punctuation or word spacing. */
 export const normaliseTypedAnswer = (text: string) => normalise(text).replace(/[\p{P}\s]/gu, '')
 
-export function normaliseNumberBands(bands: Question['numberBands']) {
-  const byTolerance = new Map<number, number>()
-  for (const band of bands || []) {
-    const tolerance = Math.max(0, Number(band.tolerance))
-    const fraction = clamp(Number(band.fraction))
-    if (Number.isFinite(tolerance) && fraction > 0) byTolerance.set(tolerance, Math.max(byTolerance.get(tolerance) || 0, fraction))
-  }
-  const sorted = [...byTolerance].map(([tolerance, fraction]) => ({ tolerance, fraction })).sort((a, b) => a.tolerance - b.tolerance)
-  let previous = 1
-  return sorted.map(band => {
-    const fraction = Math.min(previous, band.fraction)
-    previous = fraction
-    return { ...band, fraction }
-  })
-}
-
 export const questionInstruction = (question: Question): string => isPhotoChoiceQuestion(question)
   ? question.type === 'photo-reveal' ? 'Pick the picture answer early · Less revealed = more points.' : 'Pick the picture answer early · More zoomed-in = more points.'
   : question.placementMode === 'fastest-correct'
@@ -59,7 +48,7 @@ export const questionInstruction = (question: Question): string => isPhotoChoice
   multi: 'Select every correct answer · Wrong selections reduce your score.',
   boolean: 'Choose True or False · Correct = full points.',
   text: 'Write your answer · Accepted answers score automatically; the Host checks other responses.',
-  number: 'Enter your best answer · The closer you are, the more you score.',
+  number: `Enter your best number · Exact = full points; ±${suggestedNumberMaxDistance(question).toLocaleString()} or more = zero.`,
   closest: 'Guess the number · Points are awarded by closest position.',
   ordering: 'Put everything in order · More correct ordering = more points.',
   matching: 'Match the pairs · Each correct match earns points.',
@@ -72,6 +61,7 @@ export const questionInstruction = (question: Question): string => isPhotoChoice
 
 export function scoringSummary(question: Question): string {
   const maximum = `${roundScore(question.points).toLocaleString()} max`
+  if (question.type === 'number') return `${maximum} · Proportional accuracy`
   if (question.placementMode === 'fastest-correct') return `${maximum} · Fastest correct`
   if (question.type === 'text') return `${maximum} · Auto match + Host verification`
   if ((question.type === 'photo-reveal' || question.type === 'photo-zoom') && !isPhotoChoiceQuestion(question)) return `${maximum} · Earlier solve + Host verification`
@@ -188,9 +178,10 @@ function automaticGrade(question: Question, response: Response | undefined, open
     const supplied = Number(value)
     const target = Number(question.answer)
     const distance = Math.abs(supplied - target)
-    const band = Number.isFinite(distance) ? normaliseNumberBands(question.numberBands?.length ? question.numberBands : [{ tolerance: question.tolerance || 0, fraction: 1 }]).find(item => distance <= item.tolerance) : undefined
-    const points = band ? roundScore(maximum * band.fraction) : 0
-    return { ...common, points, verdict: verdictFor(points, maximum), detail: band ? `Within ±${band.tolerance}` : 'Outside the scoring bands', metrics: { distance: Number.isFinite(distance) ? distance : -1, fraction: band?.fraction || 0 } }
+    const maximumDistance = suggestedNumberMaxDistance(question)
+    const fraction = Number.isFinite(distance) ? clamp(1 - distance / maximumDistance) : 0
+    const points = fraction > 0 && maximum > 0 ? Math.max(10, roundScore(maximum * fraction)) : 0
+    return { ...common, points, verdict: verdictFor(points, maximum), detail: Number.isFinite(distance) ? `${distance.toLocaleString()} away from the answer` : 'Invalid number', metrics: { distance: Number.isFinite(distance) ? distance : -1, fraction } }
   }
   if (question.type === 'ordering') {
     const expected = Array.isArray(question.answer) ? question.answer.map(String) : []

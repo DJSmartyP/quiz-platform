@@ -39,6 +39,14 @@ test('photo choice options are public only for the current question and the answ
   assert.equal(publicGame({ ...game, phase: 'reveal' }).questions[0].answer, 'Mars')
 })
 
+test('players see the automatic number scoring range without receiving the answer', () => {
+  const game = freshGame()
+  game.questions = [normaliseQuestion({ ...game.questions[0], type: 'number', answer: 13003, numberMaxDistance: 5000 })]
+  const shared = publicGame({ ...game, phase: 'open' }).questions[0]
+  assert.equal(shared.numberMaxDistance, 5000)
+  assert.equal(shared.answer, undefined)
+})
+
 test('written answers score private variants while revealing only the primary wording', () => {
   const game = freshGame()
   const question = normaliseQuestion({ ...game.questions[0], type: 'text', answer: [' New York ', ' New York City ', 'NYC', ''] })

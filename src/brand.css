@@ -52,6 +52,8 @@
 .question-row{background:var(--qf-panel);color:var(--qf-text-soft)}
 .question-row.chosen{background:#35251e;border-color:var(--qf-forge)}
 .editor-form label{color:var(--qf-text-soft)}
+.number-bands-editor{background:var(--qf-panel-2);border-color:var(--qf-border)}
+.number-bands-editor>span{color:var(--qf-muted)}
 .editor-round-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .editor-order-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
 .editor-order-actions .btn{font-size:11px;padding:10px 12px}

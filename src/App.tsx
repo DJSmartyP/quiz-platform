@@ -8,7 +8,7 @@ import { answerLabel, type OwnResult } from './reveal'
 import { presentationImage, questionMediaSize } from './questionMedia'
 import QRCode from 'qrcode'
 import AdminDashboard from './AdminDashboard'
-import { answerMatches, isWrittenAnswerQuestion, normaliseQuestion, normaliseTypedAnswer, photoAnimationProgress, primaryAnswer, questionInstruction, reviewMaximumPoints, roundScore, scoringSummary } from './scoring'
+import { answerMatches, isWrittenAnswerQuestion, normaliseQuestion, normaliseTypedAnswer, photoAnimationProgress, primaryAnswer, questionInstruction, reviewMaximumPoints, roundScore, scoringSummary, suggestedNumberMaxDistance } from './scoring'
 import { parseQuizMediaRef } from './quizMedia'
 import { insertInRound, moveRound, moveToRound, roundNames as getRoundNames } from './rounds'
 import './App.css'
@@ -112,12 +112,12 @@ async function storeEmbeddedQuestionMedia(question: Question, quizId: string): P
   return next
 }
 function changeQuestionType(question: Question, type: QuestionType): Question {
-  const { options: _options, photoAnswerMode: _photoAnswerMode, items: _items, categories: _categories, scramble: _scramble, tolerance: _tolerance, numberBands: _numberBands, placementMode: _placementMode, scoreMode: _scoreMode, explanation: _explanation, ...base } = question
+  const { options: _options, photoAnswerMode: _photoAnswerMode, items: _items, categories: _categories, scramble: _scramble, tolerance: _tolerance, numberBands: _numberBands, numberScoringMode: _numberScoringMode, numberMaxDistance: _numberMaxDistance, placementMode: _placementMode, scoreMode: _scoreMode, explanation: _explanation, ...base } = question
   const next: Question = { ...base, type, placementMode: 'none' }
   if (type === 'single') return { ...next, options: ['Answer A', 'Answer B', 'Answer C', 'Answer D'], answer: 'Answer A' }
   if (type === 'multi') return { ...next, options: ['Answer A', 'Answer B', 'Answer C', 'Answer D'], answer: ['Answer A'] }
   if (type === 'boolean') return { ...next, answer: true, points: 750 }
-  if (type === 'number' || type === 'closest') return { ...next, answer: 0, numberBands: type === 'number' ? [{ tolerance: 0, fraction: 1 }] : undefined }
+  if (type === 'number' || type === 'closest') return { ...next, answer: 0, numberMaxDistance: type === 'number' ? 100 : undefined }
   if (type === 'ordering') return { ...next, items: ['First item', 'Second item', 'Third item'], answer: ['First item', 'Second item', 'Third item'] }
   if (type === 'matching') return { ...next, items: ['Item 1', 'Item 2'], options: ['Match 1', 'Match 2'], answer: { 'Item 1': 'Match 1', 'Item 2': 'Match 2' } }
   if (type === 'categorise') return { ...next, items: ['Item 1', 'Item 2'], categories: ['Category 1', 'Category 2'], answer: { 'Item 1': 'Category 1', 'Item 2': 'Category 2' } }
@@ -148,12 +148,7 @@ function validateQuestionDraft(question: Question) {
   if (isWrittenAnswerQuestion(question) && question.type !== 'anagram' && Array.isArray(question.answer) && question.answer.slice(1).some(answer => answer.trim()) && !question.answer[0]?.trim()) return 'Enter the correct answer to display before adding variants.'
   if (['number','closest'].includes(question.type) && !Number.isFinite(Number(question.answer))) return 'Enter a valid correct number.'
   if (question.type === 'number') {
-    const bands = question.numberBands || []
-    if (!bands.length) return 'Add at least one number scoring band.'
-    if (bands.some(band => !Number.isFinite(band.tolerance) || band.tolerance < 0 || !Number.isFinite(band.fraction) || band.fraction <= 0 || band.fraction > 1)) return 'Number bands need a non-negative tolerance and score fraction from 0.01 to 1.'
-    if (new Set(bands.map(band => band.tolerance)).size !== bands.length) return 'Each number scoring tolerance must be unique.'
-    const sortedBands = [...bands].sort((one, two) => one.tolerance - two.tolerance)
-    if (sortedBands.some((band, index) => index > 0 && band.fraction > sortedBands[index - 1].fraction)) return 'Wider number tolerances cannot award more than narrower tolerances.'
+    if (!Number.isFinite(Number(question.numberMaxDistance)) || Number(question.numberMaxDistance) <= 0) return 'Enter an acceptable scoring range greater than zero.'
   }
   if (['matching','categorise'].includes(question.type)) {
     const items = question.items || []
@@ -852,7 +847,7 @@ function Editor() {
         {draft.type==='multi'&&<label>Correct answers<input value={Array.isArray(draft.answer)?draft.answer.join(', '):''} onChange={event=>setDraft({...draft,answer:event.target.value.split(',').map(value=>value.trim()).filter(Boolean)})} placeholder="Answer A, Answer C"/><small className="field-help">Separate correct options with commas.</small></label>}
         {draft.type==='boolean'&&<label>Correct answer<select value={String(Boolean(draft.answer))} onChange={event=>setDraft({...draft,answer:event.target.value==='true'})}><option value="true">True</option><option value="false">False</option></select></label>}
         {['number','closest'].includes(draft.type)&&<label>Correct number<input type="number" value={Number(draft.answer||0)} onChange={event=>setDraft({...draft,answer:Number(event.target.value)})}/></label>}
-        {draft.type==='number'&&<div className="number-bands-editor"><strong>Number scoring bands</strong><span>First matching tolerance wins. Fractions run from 0.01 to 1.</span>{(draft.numberBands||[{tolerance:0,fraction:1}]).map((band,index)=><div className="form-two" key={`${band.tolerance}-${index}`}><label>Tolerance ±<input type="number" min="0" value={band.tolerance} onChange={event=>setDraft({...draft,numberBands:(draft.numberBands||[{tolerance:0,fraction:1}]).map((item,itemIndex)=>itemIndex===index?{...item,tolerance:Number(event.target.value)}:item)})}/></label><label>Score fraction<input type="number" min="0.01" max="1" step="0.05" value={band.fraction} onChange={event=>setDraft({...draft,numberBands:(draft.numberBands||[{tolerance:0,fraction:1}]).map((item,itemIndex)=>itemIndex===index?{...item,fraction:Number(event.target.value)}:item)})}/></label><button type="button" disabled={(draft.numberBands?.length||1)<=1} onClick={()=>setDraft({...draft,numberBands:(draft.numberBands||[]).filter((_,itemIndex)=>itemIndex!==index)})}><Trash2 size={15}/> Remove band</button></div>)}<button type="button" className="option-add" onClick={()=>setDraft({...draft,numberBands:[...(draft.numberBands||[{tolerance:0,fraction:1}]),{tolerance:5,fraction:.5}]})}><Plus size={15}/> Add scoring band</button></div>}
+        {draft.type==='number'&&<div className="number-bands-editor"><strong>Automatic number scoring</strong><span>Exact answer = 100%. Points decrease evenly with distance. At or beyond the acceptable range = 0%.</span><label>Acceptable scoring ±<input type="number" min="0.000001" step="any" value={draft.numberMaxDistance ?? suggestedNumberMaxDistance(draft)} onChange={event=>setDraft({...draft,numberMaxDistance:Number(event.target.value)})}/></label><small className="field-help">For example, an answer halfway between the correct number and the ±{suggestedNumberMaxDistance(draft).toLocaleString()} limit earns 50% of the maximum points. The timer only closes answers.</small></div>}
         {draft.type==='ordering'&&<label>Items in the correct order<textarea value={(draft.items||[]).join('\n')} onChange={event=>{const items=event.target.value.split('\n').map(value=>value.trim()).filter(Boolean);setDraft({...draft,items,answer:items})}}/><small className="field-help">Enter one item per line, earliest or first at the top.</small></label>}
         {['matching','categorise'].includes(draft.type)&&<><label>Items<textarea value={(draft.items||[]).join('\n')} onChange={event=>setDraft({...draft,items:event.target.value.split('\n').map(value=>value.trim()).filter(Boolean)})}/></label><label>{draft.type==='matching'?'Available matches':'Categories'}<textarea value={(draft.type==='matching'?draft.options||[]:draft.categories||[]).join('\n')} onChange={event=>{const values=event.target.value.split('\n').map(value=>value.trim()).filter(Boolean);setDraft(draft.type==='matching'?{...draft,options:values}:{...draft,categories:values})}}/></label><label>Correct pairs<textarea value={draft.answer&&typeof draft.answer==='object'&&!Array.isArray(draft.answer)?Object.entries(draft.answer).map(([item,value])=>`${item} = ${value}`).join('\n'):''} onChange={event=>{const answer=Object.fromEntries(event.target.value.split('\n').map(line=>line.split('=').map(value=>value.trim())).filter(pair=>pair.length===2&&pair[0]&&pair[1]));setDraft({...draft,answer})}}/><small className="field-help">Use one pair per line, for example France = Paris.</small></label></>}
         {draft.type==='list'&&<label>Expected answers<textarea value={Array.isArray(draft.answer)?draft.answer.join('\n'):''} onChange={event=>setDraft({...draft,answer:event.target.value.split('\n').map(value=>value.trim()).filter(Boolean)})}/><small className="field-help">Enter one accepted list item per line.</small></label>}

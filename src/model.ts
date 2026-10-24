@@ -142,7 +142,10 @@ export type Question = {
   points: number
   scoreMode?: ScoreMode
   placementMode?: PlacementMode
+  /** Older quiz packs may still contain bands; they migrate to numberMaxDistance. */
   numberBands?: NumberBand[]
+  numberScoringMode?: 'bands' | 'linear'
+  numberMaxDistance?: number
   duration?: number
   options?: string[]
   photoAnswerMode?: 'text' | 'choice'
