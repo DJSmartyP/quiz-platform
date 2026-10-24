@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { questionInstruction, reviewMaximumPoints, roundScore, scoreQuestion, scoringSummary } from '../src/scoring.ts'
+import { normaliseTypedAnswer, questionInstruction, reviewMaximumPoints, roundScore, scoreQuestion, scoringSummary } from '../src/scoring.ts'
 
 const base = (type, answer, extras = {}) => ({ id: `q-${type}`, round: 'Round', type, prompt: 'Question', answer, points: 1000, duration: 30, ...extras })
 const reply = (question, playerId, value, submittedAt = 1000, submittedAtServer) => ({ playerId, questionId: question.id, value, submittedAt, submittedAtServer })
@@ -92,6 +92,22 @@ test('text answers auto-mark accepted wording and queue other wording for Host v
   assert.match(review.detail, /Host verification/)
   const manual = { playerId: 'review', questionId: question.id, points: 1000, committed: false, verdict: 'correct', detail: 'Host awarded full credit', source: 'override' }
   assert.deepEqual(scoreQuestion(question, [reply(question, 'review', 'Auld Reekie')], ['review'], { existingGrades: [manual] })[0], manual)
+})
+
+test('typed answers ignore punctuation while choice answers retain their exact options', () => {
+  const written = base('text', ["St. Paul's Cathedral"])
+  assert.equal(scoreQuestion(written, [reply(written, 'a', 'st pauls cathedral')], ['a'])[0].verdict, 'correct')
+  assert.equal(scoreQuestion(written, [reply(written, 'b', 'st-pauls cathedral!')], ['b'])[0].verdict, 'correct')
+  assert.equal(scoreQuestion(written, [reply(written, 'blank', '...')], ['blank'])[0].verdict, 'pending')
+  const photo = base('photo-zoom', 'Spider-Man')
+  assert.equal(scoreQuestion(photo, [reply(photo, 'p', 'spider man')], ['p'])[0].verdict, 'correct')
+  assert.equal(normaliseTypedAnswer('Spider-Man!'), normaliseTypedAnswer('spider man'))
+  const anagram = base('anagram', 'WELL-KNOWN')
+  assert.equal(scoreQuestion(anagram, [reply(anagram, 'p', 'well known')], ['p'])[0].verdict, 'correct')
+  const choice = base('photo-zoom', 'Spider-Man', { photoAnswerMode: 'choice', options: ['Spider-Man', 'Venom'] })
+  assert.equal(scoreQuestion(choice, [reply(choice, 'p', 'spider man')], ['p'])[0].verdict, 'incorrect')
+  const list = base('list', ['St. Paul’s', 'Spider-Man'])
+  assert.equal(scoreQuestion(list, [reply(list, 'p', ['st pauls', 'spider man'])], ['p'])[0].points, 1000)
 })
 
 test('written photo answers use text verification and preserve timed credit when the Host accepts a variant', () => {

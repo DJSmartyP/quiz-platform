@@ -31,6 +31,9 @@ export const isWrittenAnswerQuestion = (question: Question) =>
 export const primaryAnswer = (question: Question) => Array.isArray(question.answer) && isWrittenAnswerQuestion(question)
   ? question.answer[0] || '' : question.answer
 
+/** Compare typed wording without making players reproduce punctuation or word spacing. */
+export const normaliseTypedAnswer = (text: string) => normalise(text).replace(/[\p{P}\s]/gu, '')
+
 export function normaliseNumberBands(bands: Question['numberBands']) {
   const byTolerance = new Map<number, number>()
   for (const band of bands || []) {
@@ -109,7 +112,9 @@ export function competitionRanks<T>(items: T[], compare: (a: T, b: T) => number,
 
 export function answerMatches(question: Question, value: unknown) {
   const answers = Array.isArray(question.answer) ? question.answer : [question.answer]
-  return answers.some(answer => answer !== undefined && normalise(String(answer)) === normalise(String(value ?? '')))
+  const normaliseAnswer = isWrittenAnswerQuestion(question) ? normaliseTypedAnswer : normalise
+  const supplied = normaliseAnswer(String(value ?? ''))
+  return Boolean(supplied) && answers.some(answer => answer !== undefined && normaliseAnswer(String(answer)) === supplied)
 }
 
 function verdictFor(points: number, maximum: number): GradeVerdict {
@@ -207,8 +212,8 @@ function automaticGrade(question: Question, response: Response | undefined, open
     return { ...common, points, verdict: verdictFor(points, maximum), detail, metrics: { accuracy, correctItems, totalItems: keys.length } }
   }
   if (question.type === 'list') {
-    const expected = [...new Set((Array.isArray(question.answer) ? question.answer : []).map(item => normalise(String(item))).filter(Boolean))]
-    const supplied = new Set((Array.isArray(value) ? value : []).map(item => normalise(String(item))).filter(Boolean))
+    const expected = [...new Set((Array.isArray(question.answer) ? question.answer : []).map(item => normaliseTypedAnswer(String(item))).filter(Boolean))]
+    const supplied = new Set((Array.isArray(value) ? value : []).map(item => normaliseTypedAnswer(String(item))).filter(Boolean))
     const found = expected.filter(item => supplied.has(item)).length
     const accuracy = expected.length ? found / expected.length : 0
     const points = roundScore(maximum * accuracy)

@@ -8,7 +8,7 @@ import { answerLabel, type OwnResult } from './reveal'
 import { presentationImage, questionMediaSize } from './questionMedia'
 import QRCode from 'qrcode'
 import AdminDashboard from './AdminDashboard'
-import { answerMatches, isWrittenAnswerQuestion, normaliseQuestion, primaryAnswer, questionInstruction, reviewMaximumPoints, roundScore, scoringSummary } from './scoring'
+import { answerMatches, isWrittenAnswerQuestion, normaliseQuestion, normaliseTypedAnswer, primaryAnswer, questionInstruction, reviewMaximumPoints, roundScore, scoringSummary } from './scoring'
 import { parseQuizMediaRef } from './quizMedia'
 import { insertInRound, moveRound, moveToRound, roundNames as getRoundNames } from './rounds'
 import './App.css'
@@ -1260,7 +1260,8 @@ function Join() {
     if (submitting) return
     if (q.type === 'anagram') {
       if (Date.now() < anagramRetryAt.current) { setError('Wait a moment before guessing again.'); return }
-      if (normalise(String(answer)) !== normalise(String(q.anagramSolution || q.answer || ''))) {
+      const guess = normaliseTypedAnswer(String(answer))
+      if (!guess || guess !== normaliseTypedAnswer(String(q.anagramSolution || q.answer || ''))) {
         anagramRetryAt.current = Date.now() + 1000
         setError('Not quite — try again.')
         return
